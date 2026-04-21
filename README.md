@@ -40,17 +40,20 @@ Reusable workflow:
 
 - `.github/workflows/package-release.yml`
 
-Compatibility note:
-
-- `.github/workflows/portable-version-package.yml` remains as a legacy compatibility entrypoint for existing callers.
-- `scripts/run-portable-version-handoff.mjs` and `scripts/resolve-portable-version-handoff.mjs` remain as legacy aliases.
-
 Expected caller behavior:
 
 1. Produce a normalized build plan and upload it as an artifact.
 2. Call the reusable workflow in `steam_packer`.
 3. `steam_packer` validates the plan and fans out packaging by platform.
 4. `steam_packer` publishes merged metadata and refreshes the Azure root index.
+
+Manual trigger behavior:
+
+- `workflow_dispatch` is supported for maintainers.
+- Provide `build_plan_path` to use a committed `build-plan.json` from this repository.
+- Or provide `build_plan_run_id` plus the optional `build_plan_repository` to download the plan artifact from another workflow run.
+- `build_plan_artifact_name` defaults to `steam-packer-build-plan`.
+- Manual runs still require the same Azure SAS secrets as reusable runs.
 
 ## Local Verification
 

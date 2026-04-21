@@ -1,4 +1,4 @@
-name: portable-version-package
+name: package-release
 
 on:
   workflow_call:
@@ -26,8 +26,8 @@ permissions:
   actions: read
 
 jobs:
-  resolve_handoff:
-    name: Resolve delegated handoff
+  resolve_plan:
+    name: Resolve release plan
     runs-on: ubuntu-latest
     outputs:
       release_tag: ${{ steps.resolve.outputs.release_tag }}
@@ -44,26 +44,26 @@ jobs:
           node-version: '22'
           package-manager-cache: false
 
-      - name: Download Portable Version build plan artifact
+      - name: Download release plan artifact
         uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.build_plan_artifact_name }}
           path: ${{ runner.temp }}/build-plan
 
-      - name: Validate Portable Version handoff
+      - name: Validate release plan
         id: resolve
         shell: bash
         run: |
-          node scripts/resolve-portable-version-handoff.mjs \
+          node scripts/resolve-release-plan.mjs \
             --plan "$RUNNER_TEMP/build-plan/build-plan.json"
 
   package:
     name: Package ${{ matrix.platform }}
-    needs: resolve_handoff
-    if: needs.resolve_handoff.outputs.should_build == 'true'
+    needs: resolve_plan
+    if: needs.resolve_plan.outputs.should_build == 'true'
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.resolve_handoff.outputs.platform_matrix) }}
+      matrix: ${{ fromJson(needs.resolve_plan.outputs.platform_matrix) }}
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout steam_packer
@@ -75,7 +75,7 @@ jobs:
           node-version: '22'
           package-manager-cache: false
 
-      - name: Download Portable Version build plan artifact
+      - name: Download release plan artifact
         uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.build_plan_artifact_name }}
@@ -89,7 +89,7 @@ jobs:
           node scripts/prepare-packaging-workspace.mjs \
             --plan "$RUNNER_TEMP/build-plan/build-plan.json" \
             --platform "${{ matrix.platform }}" \
-            --workspace "$RUNNER_TEMP/portable-version-${{ matrix.platform }}"
+            --workspace "$RUNNER_TEMP/release-${{ matrix.platform }}"
 
       - name: Download and inject service payload
         shell: bash
@@ -99,7 +99,7 @@ jobs:
           node scripts/stage-portable-payload.mjs \
             --plan "$RUNNER_TEMP/build-plan/build-plan.json" \
             --platform "${{ matrix.platform }}" \
-            --workspace "$RUNNER_TEMP/portable-version-${{ matrix.platform }}"
+            --workspace "$RUNNER_TEMP/release-${{ matrix.platform }}"
 
       - name: Stage portable Node and OpenSpec toolchain
         shell: bash
@@ -109,14 +109,14 @@ jobs:
           node scripts/stage-portable-toolchain.mjs \
             --plan "$RUNNER_TEMP/build-plan/build-plan.json" \
             --platform "${{ matrix.platform }}" \
-            --workspace "$RUNNER_TEMP/portable-version-${{ matrix.platform }}"
+            --workspace "$RUNNER_TEMP/release-${{ matrix.platform }}"
 
       - name: Verify portable toolchain
         shell: bash
         run: |
           node scripts/verify-portable-toolchain.mjs \
             --platform "${{ matrix.platform }}" \
-            --workspace "$RUNNER_TEMP/portable-version-${{ matrix.platform }}"
+            --workspace "$RUNNER_TEMP/release-${{ matrix.platform }}"
 
       - name: Repack portable Desktop archive
         shell: bash
@@ -124,26 +124,26 @@ jobs:
           node scripts/package-desktop-portable.mjs \
             --plan "$RUNNER_TEMP/build-plan/build-plan.json" \
             --platform "${{ matrix.platform }}" \
-            --workspace "$RUNNER_TEMP/portable-version-${{ matrix.platform }}"
+            --workspace "$RUNNER_TEMP/release-${{ matrix.platform }}"
 
-      - name: Upload delegated package artifacts
+      - name: Upload package artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: portable-release-package-${{ matrix.platform }}
+          name: release-package-${{ matrix.platform }}
           path: |
-            ${{ runner.temp }}/portable-version-${{ matrix.platform }}/artifact-inventory-${{ matrix.platform }}.json
-            ${{ runner.temp }}/portable-version-${{ matrix.platform }}/artifact-checksums-${{ matrix.platform }}.txt
-            ${{ runner.temp }}/portable-version-${{ matrix.platform }}/payload-validation-${{ matrix.platform }}.json
-            ${{ runner.temp }}/portable-version-${{ matrix.platform }}/toolchain-validation-${{ matrix.platform }}.json
-            ${{ runner.temp }}/portable-version-${{ matrix.platform }}/release-assets
+            ${{ runner.temp }}/release-${{ matrix.platform }}/artifact-inventory-${{ matrix.platform }}.json
+            ${{ runner.temp }}/release-${{ matrix.platform }}/artifact-checksums-${{ matrix.platform }}.txt
+            ${{ runner.temp }}/release-${{ matrix.platform }}/payload-validation-${{ matrix.platform }}.json
+            ${{ runner.temp }}/release-${{ matrix.platform }}/toolchain-validation-${{ matrix.platform }}.json
+            ${{ runner.temp }}/release-${{ matrix.platform }}/release-assets
           if-no-files-found: error
 
   publish:
-    name: Publish delegated release
+    name: Publish release
     needs:
-      - resolve_handoff
+      - resolve_plan
       - package
-    if: needs.resolve_handoff.outputs.should_build == 'true'
+    if: needs.resolve_plan.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout steam_packer
@@ -155,20 +155,20 @@ jobs:
           node-version: '22'
           package-manager-cache: false
 
-      - name: Download Portable Version build plan artifact
+      - name: Download release plan artifact
         uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.build_plan_artifact_name }}
           path: ${{ runner.temp }}/build-plan
 
-      - name: Download delegated package artifacts
+      - name: Download package artifacts
         uses: actions/download-artifact@v8
         with:
-          pattern: portable-release-package-*
+          pattern: release-package-*
           merge-multiple: true
           path: ${{ runner.temp }}/publish-input
 
-      - name: Publish Portable Version release or emit dry-run report
+      - name: Publish release or emit dry-run report
         shell: bash
         env:
           STEAM_PACKER_STEAM_AZURE_SAS_URL: ${{ secrets.steam_azure_sas_url }}
@@ -181,9 +181,9 @@ jobs:
             --artifacts-dir "$RUNNER_TEMP/publish-input" \
             --output-dir "$RUNNER_TEMP/release-metadata"
 
-      - name: Upload delegated release metadata
+      - name: Upload release metadata
         uses: actions/upload-artifact@v6
         with:
-          name: portable-release-metadata-${{ needs.resolve_handoff.outputs.release_tag }}
+          name: release-metadata-${{ needs.resolve_plan.outputs.release_tag }}
           path: ${{ runner.temp }}/release-metadata
           if-no-files-found: error

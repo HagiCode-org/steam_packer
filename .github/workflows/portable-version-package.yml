@@ -172,9 +172,6 @@ jobs:
         shell: bash
         env:
           STEAM_PACKER_STEAM_AZURE_SAS_URL: ${{ secrets.steam_azure_sas_url }}
-          STEAM_PACKER_STEAM_DEPOT_ID_LINUX: ${{ secrets.steam_depot_id_linux }}
-          STEAM_PACKER_STEAM_DEPOT_ID_WINDOWS: ${{ secrets.steam_depot_id_windows }}
-          STEAM_PACKER_STEAM_DEPOT_ID_MACOS: ${{ secrets.steam_depot_id_macos }}
         run: |
           node scripts/publish-release.mjs \
             --plan "$RUNNER_TEMP/build-plan/build-plan.json" \

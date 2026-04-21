@@ -202,11 +202,7 @@ test('delegated handoff surfaces Azure publication failures separately from pack
         serviceAssetSource: fixture.serviceArchivePath,
         toolchainConfig: toolchainFixture.configPath,
         steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
-        steamAppKey: STEAM_APP_KEY,
         steamDataPath: fixture.steamDataPath,
-        linuxDepotId: '123',
-        windowsDepotId: '456',
-        macosDepotId: '789',
         fetchImpl: async (url, options = {}) => {
           const parsed = new URL(url);
           const blobPath = parsed.pathname.split('/').slice(2).join('/');
@@ -232,26 +228,6 @@ test('delegated handoff surfaces Azure publication failures separately from pack
         }
       }),
     (error) => error.stage === 'azure-publication' && /Failed to upload Azure blob/.test(error.message)
-  );
-});
-
-test('delegated handoff fails before index write when steamAppKey is missing', async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-handoff-missing-app-'));
-  const fixture = await createPlanFixture(tempRoot, { dryRun: true });
-  const toolchainFixture = await createMockPortableToolchainConfig(tempRoot);
-
-  await assert.rejects(
-    () =>
-      executeReleasePlan({
-        planPath: fixture.planPath,
-        runRoot: path.join(tempRoot, 'run'),
-        desktopAssetSource: fixture.desktopArchivePath,
-        serviceAssetSource: fixture.serviceArchivePath,
-        toolchainConfig: toolchainFixture.configPath,
-        steamDataPath: fixture.steamDataPath,
-        forceDryRun: true
-      }),
-    (error) => error.stage === 'azure-publication' && /steamAppKey/.test(error.message)
   );
 });
 

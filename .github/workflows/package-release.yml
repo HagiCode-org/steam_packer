@@ -22,23 +22,16 @@ on:
         required: false
   workflow_dispatch:
     inputs:
-      build_plan_artifact_name:
-        description: 'Artifact name that contains build-plan.json.'
+      force_rebuild:
+        description: 'Continue even when the latest normalized Steam release tag already exists in Azure.'
         required: false
-        type: string
-        default: steam-packer-build-plan
-      build_plan_run_id:
-        description: 'Workflow run ID to download the build plan artifact from when no repository file is supplied.'
+        default: false
+        type: boolean
+      dry_run:
+        description: 'Package the latest desktop and service releases without uploading to the Azure Steam container.'
         required: false
-        type: string
-      build_plan_repository:
-        description: 'Repository that owns the build plan artifact when build_plan_run_id is set. Defaults to the current repository.'
-        required: false
-        type: string
-      build_plan_path:
-        description: 'Optional path to a committed build-plan JSON file in this repository. Overrides artifact download when provided.'
-        required: false
-        type: string
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -69,25 +62,6 @@ jobs:
           node-version: '22'
           package-manager-cache: false
 
-      - name: Validate manual build plan source
-        if: github.event_name == 'workflow_dispatch' && inputs.build_plan_path == '' && inputs.build_plan_run_id == ''
-        shell: bash
-        run: |
-          echo "::error::workflow_dispatch requires either build_plan_path or build_plan_run_id."
-          exit 1
-
-      - name: Materialize release plan from repository file
-        if: github.event_name == 'workflow_dispatch' && inputs.build_plan_path != ''
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/build-plan"
-          if [ ! -f "${{ inputs.build_plan_path }}" ]; then
-            echo "::error::build_plan_path does not exist: ${{ inputs.build_plan_path }}"
-            exit 1
-          fi
-          cp "${{ inputs.build_plan_path }}" "$RUNNER_TEMP/build-plan/build-plan.json"
-
       - name: Download release plan artifact from caller run
         if: github.event_name == 'workflow_call'
         uses: actions/download-artifact@v8
@@ -95,15 +69,20 @@ jobs:
           name: ${{ inputs.build_plan_artifact_name }}
           path: ${{ runner.temp }}/build-plan
 
-      - name: Download release plan artifact from selected run
-        if: github.event_name == 'workflow_dispatch' && inputs.build_plan_path == ''
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ inputs.build_plan_artifact_name }}
-          path: ${{ runner.temp }}/build-plan
-          github-token: ${{ github.token }}
-          repository: ${{ inputs.build_plan_repository != '' && inputs.build_plan_repository || github.repository }}
-          run-id: ${{ inputs.build_plan_run_id }}
+      - name: Resolve latest build plan for manual dispatch
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          STEAM_PACKER_DESKTOP_AZURE_SAS_URL: ${{ env.DESKTOP_AZURE_SAS_URL }}
+          STEAM_PACKER_SERVICE_AZURE_SAS_URL: ${{ env.SERVICE_AZURE_SAS_URL }}
+          STEAM_PACKER_STEAM_AZURE_SAS_URL: ${{ env.STEAM_AZURE_SAS_URL }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/build-plan"
+          node scripts/resolve-dispatch-build-plan.mjs \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --output "$RUNNER_TEMP/build-plan/build-plan.json"
 
       - name: Validate release plan
         id: resolve

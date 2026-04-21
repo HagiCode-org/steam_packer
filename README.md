@@ -50,9 +50,9 @@ Expected caller behavior:
 Manual trigger behavior:
 
 - `workflow_dispatch` is supported for maintainers.
-- Provide `build_plan_path` to use a committed `build-plan.json` from this repository.
-- Or provide `build_plan_run_id` plus the optional `build_plan_repository` to download the plan artifact from another workflow run.
-- `build_plan_artifact_name` defaults to `steam-packer-build-plan`.
+- Manual dispatch auto-resolves the latest Desktop index release and the latest Service index release.
+- Manual dispatch defaults to the three supported publication targets: `linux-x64`, `win-x64`, and `osx-universal`.
+- Manual dispatch only exposes `force_rebuild` and `dry_run`; it does not require a build-plan parameter.
 - Manual runs still require the same Azure SAS secrets as reusable runs.
 
 ## Local Verification

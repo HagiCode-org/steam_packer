@@ -58,15 +58,15 @@ function readPositiveIntegerFromEnv(names, fallbackValue) {
 function resolveAzureUploadSettings() {
   return {
     timeoutMs: readPositiveIntegerFromEnv(
-      ['STEAM_PACKER_AZURE_UPLOAD_TIMEOUT_MS', 'PORTABLE_VERSION_AZURE_UPLOAD_TIMEOUT_MS', 'AZURE_BLOB_UPLOAD_TIMEOUT_MS'],
+      ['STEAM_PACKER_AZURE_UPLOAD_TIMEOUT_MS', 'AZURE_BLOB_UPLOAD_TIMEOUT_MS'],
       DEFAULT_AZURE_UPLOAD_TIMEOUT_MS
     ),
     maxAttempts: readPositiveIntegerFromEnv(
-      ['STEAM_PACKER_AZURE_UPLOAD_MAX_ATTEMPTS', 'PORTABLE_VERSION_AZURE_UPLOAD_MAX_ATTEMPTS', 'AZURE_BLOB_UPLOAD_MAX_ATTEMPTS'],
+      ['STEAM_PACKER_AZURE_UPLOAD_MAX_ATTEMPTS', 'AZURE_BLOB_UPLOAD_MAX_ATTEMPTS'],
       DEFAULT_AZURE_UPLOAD_MAX_ATTEMPTS
     ),
     retryBaseDelayMs: readPositiveIntegerFromEnv(
-      ['STEAM_PACKER_AZURE_UPLOAD_RETRY_BASE_DELAY_MS', 'PORTABLE_VERSION_AZURE_UPLOAD_RETRY_BASE_DELAY_MS', 'AZURE_BLOB_UPLOAD_RETRY_BASE_DELAY_MS'],
+      ['STEAM_PACKER_AZURE_UPLOAD_RETRY_BASE_DELAY_MS', 'AZURE_BLOB_UPLOAD_RETRY_BASE_DELAY_MS'],
       DEFAULT_AZURE_UPLOAD_RETRY_BASE_DELAY_MS
     )
   };
@@ -276,6 +276,17 @@ function assertSteamDepotIds(steamDepotIds, label) {
   };
 }
 
+function assertSteamAppId(steamAppId, label, { allowMissing = false } = {}) {
+  const normalized = String(steamAppId ?? '').trim();
+  if (!normalized) {
+    if (allowMissing) {
+      return null;
+    }
+    throw new Error(`${label} must be a non-empty string.`);
+  }
+  return normalized;
+}
+
 function normalizeMetadataPath(releaseTag, value, fieldName) {
   const normalized = normalizeString(value, `${fieldName} must be a non-empty string.`);
   return normalized.includes('/') ? normalized.replace(/^\/+/, '') : `${releaseTag}/${normalized}`;
@@ -305,9 +316,15 @@ function assertArtifactRecord(artifact, releaseTag) {
   };
 }
 
-function assertPortableVersionVersionEntry(versionEntry, label) {
+function assertPortableVersionVersionEntry(
+  versionEntry,
+  label,
+  { stableSteamAppId = null, requireSteamAppId = false } = {}
+) {
   assertObject(versionEntry, `${label} must be an object.`);
   assertObject(versionEntry.metadata, `${label}.metadata must be an object.`);
+  const normalizedStableSteamAppId =
+    stableSteamAppId === null ? null : assertSteamAppId(stableSteamAppId, `${label}.stableSteamAppId`);
 
   const artifacts = Array.isArray(versionEntry.artifacts)
     ? versionEntry.artifacts.map((artifact) =>
@@ -316,6 +333,23 @@ function assertPortableVersionVersionEntry(versionEntry, label) {
     : (() => {
         throw new Error(`${label}.artifacts must be an array.`);
       })();
+
+  const explicitSteamAppId = assertSteamAppId(versionEntry.steamAppId, `${label}.steamAppId`, {
+    allowMissing: true
+  });
+  if (
+    explicitSteamAppId &&
+    normalizedStableSteamAppId &&
+    explicitSteamAppId !== normalizedStableSteamAppId
+  ) {
+    throw new Error(
+      `${label}.steamAppId conflicts with current publication steamAppId "${normalizedStableSteamAppId}".`
+    );
+  }
+  const resolvedSteamAppId = explicitSteamAppId ?? normalizedStableSteamAppId;
+  if (requireSteamAppId && !resolvedSteamAppId) {
+    throw new Error(`${label}.steamAppId must be a non-empty string.`);
+  }
 
   return {
     version: normalizeString(versionEntry.version, `${label}.version must be a non-empty string.`),
@@ -333,6 +367,7 @@ function assertPortableVersionVersionEntry(versionEntry, label) {
         `${label}.metadata.checksumsPath must be a non-empty string.`
       )
     },
+    steamAppId: resolvedSteamAppId,
     steamDepotIds: assertSteamDepotIds(versionEntry.steamDepotIds, `${label}.steamDepotIds`),
     artifacts: artifacts
       .sort((left, right) => left.platform.localeCompare(right.platform))
@@ -429,7 +464,11 @@ export function createPortableVersionRootIndexDocument({ generatedAt = new Date(
 
 export function validatePortableVersionRootIndexDocument(
   document,
-  { sanitizedIndexUrl = '[unknown-portable-version-index]' } = {}
+  {
+    sanitizedIndexUrl = '[unknown-portable-version-index]',
+    stableSteamAppId = null,
+    requireSteamAppId = false
+  } = {}
 ) {
   assertObject(document, `Portable Version root index ${sanitizedIndexUrl} must be a JSON object.`);
 
@@ -444,7 +483,11 @@ export function validatePortableVersionRootIndexDocument(
       document.versions.map((versionEntry, index) =>
         assertPortableVersionVersionEntry(
           versionEntry,
-          `Portable Version root index ${sanitizedIndexUrl}.versions[${index}]`
+          `Portable Version root index ${sanitizedIndexUrl}.versions[${index}]`,
+          {
+            stableSteamAppId,
+            requireSteamAppId
+          }
         )
       )
     )
@@ -454,6 +497,7 @@ export function validatePortableVersionRootIndexDocument(
 export function normalizePortableVersionVersionEntry({
   releaseTag,
   metadata,
+  steamAppId,
   steamDepotIds,
   artifacts,
   upstream = null,
@@ -489,6 +533,10 @@ export function normalizePortableVersionVersionEntry({
           `Portable Version ${normalizedReleaseTag}.metadata.checksumsPath`
         )
       },
+      steamAppId: assertSteamAppId(
+        steamAppId,
+        `Portable Version ${normalizedReleaseTag}.steamAppId`
+      ),
       steamDepotIds: assertSteamDepotIds(
         steamDepotIds,
         `Portable Version ${normalizedReleaseTag}.steamDepotIds`
@@ -498,16 +546,21 @@ export function normalizePortableVersionVersionEntry({
       publishedAt,
       updatedAt
     },
-    `Portable Version ${normalizedReleaseTag}`
+    `Portable Version ${normalizedReleaseTag}`,
+    { requireSteamAppId: true }
   );
 }
 
 export function upsertPortableVersionRootIndexEntry(document, versionEntry, { generatedAt = new Date().toISOString() } = {}) {
-  const normalizedDocument = validatePortableVersionRootIndexDocument(document);
   const normalizedVersionEntry = assertPortableVersionVersionEntry(
     versionEntry,
-    `Portable Version ${versionEntry?.version ?? '[unknown-release]'}`
+    `Portable Version ${versionEntry?.version ?? '[unknown-release]'}`,
+    { requireSteamAppId: true }
   );
+  const normalizedDocument = validatePortableVersionRootIndexDocument(document, {
+    stableSteamAppId: normalizedVersionEntry.steamAppId,
+    requireSteamAppId: true
+  });
   const remainingEntries = normalizedDocument.versions.filter(
     (entry) => entry.version !== normalizedVersionEntry.version
   );
@@ -742,7 +795,8 @@ export async function writePortableVersionRootIndex({
       generatedAt
     },
     {
-      sanitizedIndexUrl: sanitizeUrlForLogs(buildPortableVersionRootIndexUrl(sasUrl))
+      sanitizedIndexUrl: sanitizeUrlForLogs(buildPortableVersionRootIndexUrl(sasUrl)),
+      requireSteamAppId: true
     }
   );
 

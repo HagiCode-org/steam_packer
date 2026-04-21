@@ -15,6 +15,7 @@ import {
   writePortableVersionRootIndex
 } from './lib/azure-blob.mjs';
 import { ensureDir, pathExists, readJson, writeJson } from './lib/fs-utils.mjs';
+import { DEFAULT_STEAM_DATA_PATH, resolveSteamApplication } from './lib/steam-data.mjs';
 import { annotateError, appendSummary } from './lib/summary.mjs';
 
 function requireNonEmptyString(value, label) {
@@ -30,17 +31,14 @@ function resolveSteamDepotIds(options = {}) {
     linux:
       options.linuxDepotId ??
       process.env.STEAM_PACKER_STEAM_DEPOT_ID_LINUX ??
-      process.env.PORTABLE_VERSION_STEAM_DEPOT_ID_LINUX ??
       process.env.STEAM_DEPOT_ID_LINUX,
     windows:
       options.windowsDepotId ??
       process.env.STEAM_PACKER_STEAM_DEPOT_ID_WINDOWS ??
-      process.env.PORTABLE_VERSION_STEAM_DEPOT_ID_WINDOWS ??
       process.env.STEAM_DEPOT_ID_WINDOWS,
     macos:
       options.macosDepotId ??
       process.env.STEAM_PACKER_STEAM_DEPOT_ID_MACOS ??
-      process.env.PORTABLE_VERSION_STEAM_DEPOT_ID_MACOS ??
       process.env.STEAM_DEPOT_ID_MACOS
   };
 
@@ -51,12 +49,24 @@ function resolveSteamDepotIds(options = {}) {
   };
 }
 
+function resolveSteamAppKey(value) {
+  return requireNonEmptyString(
+    value ?? process.env.STEAM_PACKER_STEAM_APP_KEY ?? process.env.STEAM_APP_KEY,
+    'steamAppKey'
+  );
+}
+
+function resolveSteamDataPath(value) {
+  return path.resolve(
+    value ?? process.env.STEAM_PACKER_STEAM_DATA_PATH ?? process.env.STEAM_DATA_PATH ?? DEFAULT_STEAM_DATA_PATH
+  );
+}
+
 function resolveSteamAzureSasUrl(value) {
   const sasUrl =
     value ??
     process.env.STEAM_PACKER_STEAM_AZURE_SAS_URL ??
-    process.env.PORTABLE_VERSION_STEAM_AZURE_SAS_URL ??
-    process.env.PORTABLE_VERSION_AZURE_SAS_URL ??
+    process.env.STEAM_AZURE_SAS_URL ??
     process.env.AZURE_BLOB_SAS_URL ??
     process.env.AZURE_SAS_URL;
 
@@ -165,6 +175,7 @@ async function buildPublicationArtifacts({ plan, artifactsDir, outputDir }) {
 function createDryRunReport({
   releaseTag,
   steamAzureSasUrl,
+  steamAppId,
   steamDepotIds,
   publicationArtifacts,
   outputDir,
@@ -183,6 +194,7 @@ function createDryRunReport({
           ? sanitizeUrlForLogs(`${steamAzureSasUrl.replace(/\?.*$/, '').replace(/\/?$/, '/') }index.json`)
           : null
       },
+      steamAppId,
       steamDepotIds,
       upstream: {
         desktop: {
@@ -206,10 +218,11 @@ function createDryRunReport({
   };
 }
 
-function buildResultVersionEntry({ plan, publicationArtifacts, steamDepotIds, publishedAt }) {
+function buildResultVersionEntry({ plan, publicationArtifacts, steamAppId, steamDepotIds, publishedAt }) {
   return normalizePortableVersionVersionEntry({
     releaseTag: publicationArtifacts.releaseTag,
     metadata: publicationArtifacts.metadataBlobPaths,
+    steamAppId,
     steamDepotIds,
     artifacts: publicationArtifacts.mergedInventory.artifacts,
     upstream: {
@@ -261,6 +274,8 @@ export async function publishRelease({
   outputDir,
   forceDryRun = false,
   steamAzureSasUrl = resolveSteamAzureSasUrl(),
+  steamAppKey: steamAppKeyInput,
+  steamDataPath: steamDataPathInput,
   linuxDepotId,
   windowsDepotId,
   macosDepotId,
@@ -283,6 +298,13 @@ export async function publishRelease({
     artifactsDir: resolvedArtifactsDir,
     outputDir: resolvedOutputDir
   });
+  const steamAppKey = resolveSteamAppKey(steamAppKeyInput);
+  const steamDataPath = resolveSteamDataPath(steamDataPathInput);
+  const { application } = await resolveSteamApplication({
+    steamAppKey,
+    steamDataPath
+  });
+  const steamAppId = application.storeAppId;
   const steamDepotIds = resolveSteamDepotIds({
     linuxDepotId,
     windowsDepotId,
@@ -293,6 +315,7 @@ export async function publishRelease({
     const { dryRunReportPath, report } = createDryRunReport({
       releaseTag,
       steamAzureSasUrl,
+      steamAppId,
       steamDepotIds,
       publicationArtifacts,
       outputDir: resolvedOutputDir,
@@ -316,13 +339,14 @@ export async function publishRelease({
       dryRunReportPath,
       assetCount: publicationArtifacts.uploads.length,
       metadata: publicationArtifacts.metadataBlobPaths,
+      steamAppId,
       steamDepotIds
     };
   }
 
   if (!steamAzureSasUrl) {
     throw new Error(
-      'publish-release requires STEAM_PACKER_STEAM_AZURE_SAS_URL, PORTABLE_VERSION_STEAM_AZURE_SAS_URL, or --steam-azure-sas-url for Azure publication.'
+      'publish-release requires STEAM_PACKER_STEAM_AZURE_SAS_URL, STEAM_AZURE_SAS_URL, or --steam-azure-sas-url for Azure publication.'
     );
   }
 
@@ -355,6 +379,7 @@ export async function publishRelease({
   const nextVersionEntry = buildResultVersionEntry({
     plan,
     publicationArtifacts,
+    steamAppId,
     steamDepotIds,
     publishedAt
   });
@@ -394,6 +419,7 @@ export async function publishRelease({
       rootIndexExistedBeforePublish: rootIndex.exists
     },
     metadata: publicationArtifacts.metadataBlobPaths,
+    steamAppId,
     steamDepotIds,
     uploads: uploadedBlobs.map((entry) => ({
       blobPath: entry.blobPath,
@@ -418,6 +444,7 @@ export async function publishRelease({
     releaseTag,
     assetCount: publicationArtifacts.uploads.length,
     metadata: publicationArtifacts.metadataBlobPaths,
+    steamAppId,
     steamDepotIds,
     resultPath
   };
@@ -431,6 +458,8 @@ async function main() {
       'output-dir': { type: 'string' },
       'force-dry-run': { type: 'boolean', default: false },
       'steam-azure-sas-url': { type: 'string' },
+      'steam-app-key': { type: 'string' },
+      'steam-data-path': { type: 'string' },
       'linux-depot-id': { type: 'string' },
       'windows-depot-id': { type: 'string' },
       'macos-depot-id': { type: 'string' }
@@ -444,6 +473,8 @@ async function main() {
     outputDir: values['output-dir'],
     forceDryRun: values['force-dry-run'],
     steamAzureSasUrl: values['steam-azure-sas-url'],
+    steamAppKey: values['steam-app-key'],
+    steamDataPath: values['steam-data-path'],
     linuxDepotId: values['linux-depot-id'],
     windowsDepotId: values['windows-depot-id'],
     macosDepotId: values['macos-depot-id']

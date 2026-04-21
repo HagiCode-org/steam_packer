@@ -1,6 +1,6 @@
 # Portable Version Migration
 
-`steam_packer` is now the execution owner for Portable Version packaging and Azure publication.
+`steam_packer` stays independent. `portable-version` is just the current upstream caller for Portable Version packaging and Azure publication.
 
 ## What Moved
 
@@ -12,7 +12,6 @@
 
 ## What Stays In `portable-version`
 
-- Trigger entrypoints (`schedule`, `workflow_dispatch`, `repository_dispatch`)
 - Version resolution and release-tag derivation
 - Build-plan / handoff payload generation
 - Steam release hydration and Steam upload workflows
@@ -27,11 +26,11 @@ From `repos/steam_packer`:
 npm run verify:dry-run
 ```
 
-This validates delegated packaging without Azure writes and confirms that the merged metadata remains complete enough for publication and later Steam hydration.
+This validates packaging without Azure writes and confirms that the merged metadata remains complete enough for publication and later Steam hydration.
 
 ### Force rebuild
 
-Use `portable-version-release` with `force_rebuild=true`. The rebuild intent stays in the handoff payload and `steam_packer` executes the same release tag again while preserving root-index upsert semantics.
+Regenerate the handoff payload with `repos/portable-version/scripts/resolve-build-plan.mjs`, set `force_rebuild=true` in that input, and pass the plan to `steam_packer`. The rebuild intent stays in the handoff payload and `steam_packer` executes the same release tag again while preserving root-index upsert semantics.
 
 ### Platform matrix
 
@@ -42,7 +41,10 @@ Use `portable-version-release` with `force_rebuild=true`. The rebuild intent sta
 For local diagnostics or CI assertions, use:
 
 ```bash
-node scripts/run-portable-version-handoff.mjs --plan <path-to-build-plan.json>
+node scripts/run-release-plan.mjs \
+  --plan <path-to-build-plan.json> \
+  --steam-app-key hagicode \
+  --steam-data-path ../index/src/data/public/steam/index.json
 ```
 
 Failure stages are attributed as:
@@ -51,8 +53,10 @@ Failure stages are attributed as:
 - `delegated-packaging`
 - `azure-publication`
 
+`azure-publication` now also requires an explicit `steamAppKey` (`--steam-app-key`, `STEAM_PACKER_STEAM_APP_KEY`, or `STEAM_APP_KEY`) plus the shared Steam dataset path (`--steam-data-path`, `STEAM_PACKER_STEAM_DATA_PATH`, or the default `../index/src/data/public/steam/index.json`) before dry-run or real publication can write the root index contract.
+
 ### Primary Troubleshooting Entry Points
 
 - Handoff shape or release intent problems: `repos/portable-version/scripts/resolve-build-plan.mjs`
-- Delegated packaging / publication problems: `repos/steam_packer/scripts/run-portable-version-handoff.mjs`
+- Packaging / publication problems: `repos/steam_packer/scripts/run-release-plan.mjs`
 - Steam hydration problems: `repos/portable-version/scripts/prepare-steam-release-input.mjs`

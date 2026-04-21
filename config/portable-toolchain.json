@@ -1,0 +1,45 @@
+{
+  "manifestVersion": 1,
+  "node": {
+    "version": "24.14.0",
+    "distBaseUrl": "https://nodejs.org/dist/v24.14.0",
+    "platforms": {
+      "linux-x64": {
+        "archiveName": "node-v24.14.0-linux-x64.tar.xz",
+        "archiveType": "tar.xz",
+        "downloadUrl": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-x64.tar.xz",
+        "extractRoot": "node-v24.14.0-linux-x64",
+        "checksumSha256": "41cd79bb7877c81605a9e68ec4c91547774f46a40c67a17e34d7179ef11729df"
+      },
+      "win-x64": {
+        "archiveName": "node-v24.14.0-win-x64.zip",
+        "archiveType": "zip",
+        "downloadUrl": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-win-x64.zip",
+        "extractRoot": "node-v24.14.0-win-x64",
+        "checksumSha256": "313fa40c0d7b18575821de8cb17483031fe07d95de5994f6f435f3b345f85c66"
+      },
+      "osx-x64": {
+        "archiveName": "node-v24.14.0-darwin-x64.tar.gz",
+        "archiveType": "tar.gz",
+        "downloadUrl": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-darwin-x64.tar.gz",
+        "extractRoot": "node-v24.14.0-darwin-x64",
+        "checksumSha256": "f2879eb810e25993a0578e5d878930266fd2eafcffe9f2839b3d8db354d4879e"
+      },
+      "osx-arm64": {
+        "archiveName": "node-v24.14.0-darwin-arm64.tar.gz",
+        "archiveType": "tar.gz",
+        "downloadUrl": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-darwin-arm64.tar.gz",
+        "extractRoot": "node-v24.14.0-darwin-arm64",
+        "checksumSha256": "a1a54f46a750d2523d628d924aab61758a51c9dad3e0238beb14141be9615dd3"
+      }
+    }
+  },
+  "openspec": {
+    "packageName": "@fission-ai/openspec",
+    "version": "1.2.0",
+    "binName": "openspec",
+    "aliases": [
+      "opsx"
+    ]
+  }
+}

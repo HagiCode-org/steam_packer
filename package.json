@@ -8,6 +8,7 @@
     "test": "node --test tests/*.test.mjs",
     "verify:dry-run": "node --test tests/dry-run-packaging.test.mjs",
     "verify:publication": "node --test tests/release-publication.test.mjs",
+    "verify:release-plan": "node --test tests/handoff-failures.test.mjs",
     "verify:handoff": "node --test tests/handoff-failures.test.mjs"
   }
 }

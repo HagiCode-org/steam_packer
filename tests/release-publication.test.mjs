@@ -5,6 +5,7 @@ import path from 'node:path';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { readJson, writeJson } from '../scripts/lib/fs-utils.mjs';
 import { publishRelease } from '../scripts/publish-release.mjs';
+import { DEFAULT_STEAM_DATA_URL } from '../scripts/lib/steam-data.mjs';
 
 const STEAM_APP_KEY = 'hagicode';
 const STEAM_APP_ID = '4625540';
@@ -13,6 +14,28 @@ const SHARED_STEAM_DEPOT_IDS = {
   windows: '4625541',
   macos: '4625543'
 };
+
+function createSteamDataSet() {
+  return {
+    version: '1.0.0',
+    updatedAt: '2026-04-21T00:00:00.000Z',
+    applications: [
+      {
+        key: STEAM_APP_KEY,
+        displayName: 'HagiCode',
+        kind: 'application',
+        parentKey: null,
+        storeAppId: STEAM_APP_ID,
+        storeUrl: 'https://store.steampowered.com/app/4625540/Hagicode/',
+        platformAppIds: {
+          windows: '4625541',
+          linux: '4625542',
+          macos: '4625543'
+        }
+      }
+    ]
+  };
+}
 
 function createPlan(releaseTag, { dryRun = false } = {}) {
   return {
@@ -40,25 +63,7 @@ async function createPublicationFixture({ releaseTag = 'v0.1.0-beta.33', dryRun 
 
   await mkdir(artifactsDir, { recursive: true });
   await writeJson(planPath, createPlan(releaseTag, { dryRun }));
-  await writeJson(steamDataPath, {
-    version: '1.0.0',
-    updatedAt: '2026-04-21T00:00:00.000Z',
-    applications: [
-      {
-        key: STEAM_APP_KEY,
-        displayName: 'HagiCode',
-        kind: 'application',
-        parentKey: null,
-        storeAppId: STEAM_APP_ID,
-        storeUrl: 'https://store.steampowered.com/app/4625540/Hagicode/',
-        platformAppIds: {
-          windows: '4625541',
-          linux: '4625542',
-          macos: '4625543'
-        }
-      }
-    ]
-  });
+  await writeJson(steamDataPath, createSteamDataSet());
   await writeFile(assetPath, 'fixture asset', 'utf8');
   await writeJson(path.join(artifactsDir, 'artifact-inventory-linux-x64.json'), {
     releaseTag,
@@ -86,7 +91,8 @@ async function createPublicationFixture({ releaseTag = 'v0.1.0-beta.33', dryRun 
 
 function createAzureFetchStub({
   existingRootIndex = null,
-  failBlobPath = null
+  failBlobPath = null,
+  steamDataSet = null
 } = {}) {
   const blobs = new Map();
   if (existingRootIndex) {
@@ -95,6 +101,13 @@ function createAzureFetchStub({
 
   return async (url, options = {}) => {
     const parsed = new URL(url);
+    if ((options.method ?? 'GET') === 'GET' && parsed.toString() === DEFAULT_STEAM_DATA_URL && steamDataSet) {
+      return new Response(JSON.stringify(steamDataSet), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+
     const blobPath = parsed.pathname.split('/').slice(2).join('/');
     const method = options.method ?? 'GET';
 
@@ -159,6 +172,27 @@ test('publish-release emits an Azure dry-run publication report', async () => {
   assert.equal(report.releaseIdentity, 'web-only');
   assert.equal(report.azurePublication.versionDirectory, 'v0.1.0-beta.33/');
   assert.equal(report.metadata.buildManifestPath, 'v0.1.0-beta.33/v0.1.0-beta.33.build-manifest.json');
+  assert.equal(report.steamAppId, STEAM_APP_ID);
+  assert.deepEqual(report.steamDepotIds, SHARED_STEAM_DEPOT_IDS);
+});
+
+test('publish-release resolves the shared Steam dataset from the default online source', async () => {
+  const fixture = await createPublicationFixture({ dryRun: true });
+  const fetchImpl = createAzureFetchStub({
+    steamDataSet: createSteamDataSet()
+  });
+
+  const result = await publishRelease({
+    planPath: fixture.planPath,
+    artifactsDir: fixture.artifactsDir,
+    outputDir: fixture.outputDir,
+    forceDryRun: true,
+    steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
+    fetchImpl
+  });
+
+  const report = await readJson(path.join(fixture.outputDir, 'v0.1.0-beta.33.publish-dry-run.json'));
+  assert.equal(result.steamAppId, STEAM_APP_ID);
   assert.equal(report.steamAppId, STEAM_APP_ID);
   assert.deepEqual(report.steamDepotIds, SHARED_STEAM_DEPOT_IDS);
 });

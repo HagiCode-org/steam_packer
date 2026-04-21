@@ -1,20 +1,10 @@
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { readJson } from './fs-utils.mjs';
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const DEFAULT_STEAM_APP_KEY = 'hagicode';
-
-export const DEFAULT_STEAM_DATA_PATH = path.resolve(
-  repoRoot,
-  '..',
-  'index',
-  'src',
-  'data',
-  'public',
-  'steam',
-  'index.json'
-);
+export const DEFAULT_STEAM_DATA_URL = 'https://index.hagicode.com/steam/index.json';
+export const DEFAULT_STEAM_DATA_SOURCE = DEFAULT_STEAM_DATA_URL;
+export const DEFAULT_STEAM_DATA_PATH = DEFAULT_STEAM_DATA_SOURCE;
 
 function requireNonEmptyString(value, label) {
   const normalized = String(value ?? '').trim();
@@ -42,8 +32,8 @@ function normalizePlatformAppIds(value, label) {
   };
 }
 
-function normalizeApplication(value, index, sourcePath) {
-  const label = `shared Steam dataset ${sourcePath} applications[${index}]`;
+function normalizeApplication(value, index, sourceDescription) {
+  const label = `shared Steam dataset ${sourceDescription} applications[${index}]`;
   const application = requireObject(value, label);
 
   return {
@@ -60,33 +50,69 @@ function normalizeApplication(value, index, sourcePath) {
   };
 }
 
-export async function loadSteamDataSet(steamDataPath = DEFAULT_STEAM_DATA_PATH) {
-  const sourcePath = path.resolve(steamDataPath);
+function isRemoteSteamDataSource(value) {
+  return /^https?:\/\//i.test(String(value ?? ''));
+}
+
+async function readRemoteJson(sourceUrl, fetchImpl = fetch) {
+  const response = await fetchImpl(sourceUrl, {
+    headers: {
+      accept: 'application/json'
+    },
+    redirect: 'follow'
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Failed to download shared Steam dataset from ${sourceUrl}: ${response.status} ${body}`);
+  }
+
+  try {
+    return await response.json();
+  } catch (error) {
+    throw new Error(`Failed to parse shared Steam dataset from ${sourceUrl}: ${error.message}`);
+  }
+}
+
+function resolveSteamDataSource(steamDataPath) {
+  return steamDataPath ?? DEFAULT_STEAM_DATA_SOURCE;
+}
+
+export async function loadSteamDataSet(steamDataPath, { fetchImpl = fetch } = {}) {
+  const configuredSource = resolveSteamDataSource(steamDataPath);
+  const isRemoteSource = isRemoteSteamDataSource(configuredSource);
+  const sourceDescription = isRemoteSource ? configuredSource : path.resolve(configuredSource);
 
   let raw;
   try {
-    raw = await readJson(sourcePath);
+    raw = isRemoteSource
+      ? await readRemoteJson(configuredSource, fetchImpl)
+      : await readJson(sourceDescription);
   } catch (error) {
-    throw new Error(`Failed to read shared Steam dataset at ${sourcePath}: ${error.message}`);
+    if (error.message.startsWith('Failed to download shared Steam dataset')) {
+      throw error;
+    }
+
+    throw new Error(`Failed to read shared Steam dataset at ${sourceDescription}: ${error.message}`);
   }
 
-  const dataset = requireObject(raw, `shared Steam dataset ${sourcePath}`);
-  const version = requireNonEmptyString(dataset.version, `shared Steam dataset ${sourcePath}.version`);
-  const updatedAt = requireNonEmptyString(dataset.updatedAt, `shared Steam dataset ${sourcePath}.updatedAt`);
+  const dataset = requireObject(raw, `shared Steam dataset ${sourceDescription}`);
+  const version = requireNonEmptyString(dataset.version, `shared Steam dataset ${sourceDescription}.version`);
+  const updatedAt = requireNonEmptyString(dataset.updatedAt, `shared Steam dataset ${sourceDescription}.updatedAt`);
 
   if (!Array.isArray(dataset.applications) || dataset.applications.length === 0) {
-    throw new Error(`shared Steam dataset ${sourcePath}.applications must be a non-empty array.`);
+    throw new Error(`shared Steam dataset ${sourceDescription}.applications must be a non-empty array.`);
   }
 
   const applications = dataset.applications.map((entry, index) =>
-    normalizeApplication(entry, index, sourcePath)
+    normalizeApplication(entry, index, sourceDescription)
   );
   const applicationMap = new Map();
   for (const application of applications) {
     const normalizedKey = application.key.toLowerCase();
     if (applicationMap.has(normalizedKey)) {
       throw new Error(
-        `shared Steam dataset ${sourcePath} contains duplicate applications[].key "${application.key}".`
+        `shared Steam dataset ${sourceDescription} contains duplicate applications[].key "${application.key}".`
       );
     }
 
@@ -94,7 +120,7 @@ export async function loadSteamDataSet(steamDataPath = DEFAULT_STEAM_DATA_PATH) 
   }
 
   return {
-    sourcePath,
+    sourcePath: sourceDescription,
     version,
     updatedAt,
     applications,
@@ -102,9 +128,9 @@ export async function loadSteamDataSet(steamDataPath = DEFAULT_STEAM_DATA_PATH) 
   };
 }
 
-export async function resolveSteamApplication({ steamAppKey, steamDataPath = DEFAULT_STEAM_DATA_PATH } = {}) {
+export async function resolveSteamApplication({ steamAppKey, steamDataPath, fetchImpl } = {}) {
   const normalizedKey = requireNonEmptyString(steamAppKey, 'steamAppKey');
-  const dataset = await loadSteamDataSet(steamDataPath);
+  const dataset = await loadSteamDataSet(steamDataPath, { fetchImpl });
   const application = dataset.applicationMap.get(normalizedKey.toLowerCase());
 
   if (!application) {
@@ -121,11 +147,13 @@ export async function resolveSteamApplication({ steamAppKey, steamDataPath = DEF
 
 export async function resolveSteamPublicationIdentity({
   steamAppKey = DEFAULT_STEAM_APP_KEY,
-  steamDataPath = DEFAULT_STEAM_DATA_PATH
+  steamDataPath,
+  fetchImpl
 } = {}) {
   const { dataset, application } = await resolveSteamApplication({
     steamAppKey,
-    steamDataPath
+    steamDataPath,
+    fetchImpl
   });
 
   return {

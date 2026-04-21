@@ -17,7 +17,6 @@ import {
 import { ensureDir, pathExists, readJson, writeJson } from './lib/fs-utils.mjs';
 import {
   DEFAULT_STEAM_APP_KEY,
-  DEFAULT_STEAM_DATA_PATH,
   resolveSteamPublicationIdentity
 } from './lib/steam-data.mjs';
 import { annotateError, appendSummary } from './lib/summary.mjs';
@@ -38,9 +37,14 @@ function resolveSteamAppKey(value) {
 }
 
 function resolveSteamDataPath(value) {
-  return path.resolve(
-    value ?? process.env.STEAM_PACKER_STEAM_DATA_PATH ?? process.env.STEAM_DATA_PATH ?? DEFAULT_STEAM_DATA_PATH
-  );
+  const configuredPath =
+    value ?? process.env.STEAM_PACKER_STEAM_DATA_PATH ?? process.env.STEAM_DATA_PATH;
+
+  if (!configuredPath) {
+    return undefined;
+  }
+
+  return /^https?:\/\//i.test(configuredPath) ? configuredPath : path.resolve(configuredPath);
 }
 
 function resolveSteamAzureSasUrl(value) {
@@ -304,7 +308,8 @@ export async function publishRelease({
   const steamDataPath = resolveSteamDataPath(steamDataPathInput);
   const publicationIdentity = await resolveSteamPublicationIdentity({
     steamAppKey,
-    steamDataPath
+    steamDataPath,
+    fetchImpl
   });
   const steamAppId = publicationIdentity.steamAppId;
   const steamDepotIds = publicationIdentity.steamDepotIds;

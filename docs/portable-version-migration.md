@@ -43,7 +43,6 @@ For local diagnostics or CI assertions, use:
 ```bash
 node scripts/run-release-plan.mjs \
   --plan <path-to-build-plan.json> \
-  --steam-app-key hagicode \
   --steam-data-path ../index/src/data/public/steam/index.json
 ```
 
@@ -53,7 +52,7 @@ Failure stages are attributed as:
 - `delegated-packaging`
 - `azure-publication`
 
-`azure-publication` now also requires an explicit `steamAppKey` (`--steam-app-key`, `STEAM_PACKER_STEAM_APP_KEY`, or `STEAM_APP_KEY`) plus the shared Steam dataset path (`--steam-data-path`, `STEAM_PACKER_STEAM_DATA_PATH`, or the default `../index/src/data/public/steam/index.json`) before dry-run or real publication can write the root index contract.
+`azure-publication` now reads both the canonical `steamAppId` and the per-platform `steamDepotIds` from the shared Steam dataset before dry-run or real publication writes the root index contract. `steamAppKey` defaults to `hagicode`; `--steam-app-key` remains only as an override when a caller needs a different shared dataset entry.
 
 ### Primary Troubleshooting Entry Points
 

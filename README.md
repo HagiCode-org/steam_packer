@@ -73,7 +73,6 @@ node scripts/run-release-plan.mjs \
   --desktop-asset-source /path/to/desktop.zip \
   --service-asset-source /path/to/service.zip \
   --toolchain-config /path/to/portable-toolchain.json \
-  --steam-app-key hagicode \
   --steam-data-path ../index/src/data/public/steam/index.json \
   --force-dry-run
 ```
@@ -106,15 +105,14 @@ The root index entry remains compatible with current Steam hydration consumers:
 - `steamDepotIds.macos`
 - `artifacts[]`
 
-Publication now requires an explicit `steamAppKey` plus the shared Steam dataset path:
+Publication now resolves both `steamAppId` and `steamDepotIds` from the shared Steam dataset:
 
-- `--steam-app-key`
-- `STEAM_PACKER_STEAM_APP_KEY`
-- `STEAM_APP_KEY`
+- default `steamAppKey`: `hagicode`
+- optional override: `--steam-app-key`, `STEAM_PACKER_STEAM_APP_KEY`, or `STEAM_APP_KEY`
 - `--steam-data-path` or `STEAM_PACKER_STEAM_DATA_PATH`
 - By default, the dataset path resolves to `../index/src/data/public/steam/index.json` from the `steam_packer` repository root.
 
-`steam_packer` resolves the canonical `steamAppId` from `applications[].key`, then reuses that resolved value for dry-run output, publication result metadata, and every `versions[]` entry written back to `hagicode-steam/index.json`. Legacy entries that predate this field are backfilled from the same resolved value, while any conflicting non-empty `steamAppId` still aborts the write.
+`steam_packer` resolves the canonical `steamAppId` from `applications[].key` and maps `applications[].platformAppIds` to `steamDepotIds`. The resolved values are reused for dry-run output, publication result metadata, and every `versions[]` entry written back to `hagicode-steam/index.json`. Legacy entries that predate `steamAppId` are backfilled from the same resolved value, while any conflicting non-empty `steamAppId` still aborts the write.
 
 ## Example Integration
 

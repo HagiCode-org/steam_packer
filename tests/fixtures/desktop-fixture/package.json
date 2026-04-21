@@ -1,0 +1,11 @@
+{
+  "name": "desktop-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build:linux": "node -e \"console.log('fixture build:linux')\"",
+    "build:win": "node -e \"console.log('fixture build:win')\"",
+    "build:mac:x64": "node -e \"console.log('fixture build:mac:x64')\"",
+    "build:mac:arm64": "node -e \"console.log('fixture build:mac:arm64')\""
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "manifestVersion": "1.0",
+  "package": {
+    "name": "hagicode-0.1.0-beta.33-linux-x64-nort",
+    "version": "0.1.0-beta.33",
+    "platform": "linux-x64"
+  }
+}

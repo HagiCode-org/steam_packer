@@ -6,6 +6,9 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { readJson, writeJson } from '../scripts/lib/fs-utils.mjs';
 import { publishRelease } from '../scripts/publish-release.mjs';
 
+const STEAM_APP_KEY = 'hagicode';
+const STEAM_APP_ID = '4625540';
+
 function createPlan(releaseTag, { dryRun = false } = {}) {
   return {
     trigger: { type: 'workflow_dispatch' },
@@ -14,7 +17,7 @@ function createPlan(releaseTag, { dryRun = false } = {}) {
       service: { manifestUrl: 'https://index.hagicode.com/server/index.json', version: releaseTag.replace(/^v/, '') }
     },
     release: {
-      repository: 'HagiCode-org/portable-version',
+      repository: 'HagiCode-org/steam_packer',
       tag: releaseTag,
       name: `Portable Version ${releaseTag}`
     },
@@ -23,14 +26,34 @@ function createPlan(releaseTag, { dryRun = false } = {}) {
 }
 
 async function createPublicationFixture({ releaseTag = 'v0.1.0-beta.33', dryRun = false } = {}) {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'portable-version-publish-'));
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-publish-'));
   const planPath = path.join(tempRoot, 'build-plan.json');
   const artifactsDir = path.join(tempRoot, 'artifacts');
   const outputDir = path.join(tempRoot, 'release-metadata');
   const assetPath = path.join(artifactsDir, 'hagicode-portable-linux-x64.zip');
+  const steamDataPath = path.join(tempRoot, 'steam-index.json');
 
   await mkdir(artifactsDir, { recursive: true });
   await writeJson(planPath, createPlan(releaseTag, { dryRun }));
+  await writeJson(steamDataPath, {
+    version: '1.0.0',
+    updatedAt: '2026-04-21T00:00:00.000Z',
+    applications: [
+      {
+        key: STEAM_APP_KEY,
+        displayName: 'HagiCode',
+        kind: 'application',
+        parentKey: null,
+        storeAppId: STEAM_APP_ID,
+        storeUrl: 'https://store.steampowered.com/app/4625540/Hagicode/',
+        platformAppIds: {
+          windows: '4625541',
+          linux: '4625542',
+          macos: '4625543'
+        }
+      }
+    ]
+  });
   await writeFile(assetPath, 'fixture asset', 'utf8');
   await writeJson(path.join(artifactsDir, 'artifact-inventory-linux-x64.json'), {
     releaseTag,
@@ -51,7 +74,8 @@ async function createPublicationFixture({ releaseTag = 'v0.1.0-beta.33', dryRun 
     tempRoot,
     planPath,
     artifactsDir,
-    outputDir
+    outputDir,
+    steamDataPath
   };
 }
 
@@ -122,6 +146,8 @@ test('publish-release emits an Azure dry-run publication report', async () => {
     outputDir: fixture.outputDir,
     forceDryRun: true,
     steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
+    steamAppKey: STEAM_APP_KEY,
+    steamDataPath: fixture.steamDataPath,
     linuxDepotId: '123',
     windowsDepotId: '456',
     macosDepotId: '789'
@@ -132,6 +158,7 @@ test('publish-release emits an Azure dry-run publication report', async () => {
   assert.equal(report.releaseIdentity, 'web-only');
   assert.equal(report.azurePublication.versionDirectory, 'v0.1.0-beta.33/');
   assert.equal(report.metadata.buildManifestPath, 'v0.1.0-beta.33/v0.1.0-beta.33.build-manifest.json');
+  assert.equal(report.steamAppId, STEAM_APP_ID);
   assert.deepEqual(report.steamDepotIds, {
     linux: '123',
     windows: '456',
@@ -175,6 +202,8 @@ test('publish-release uploads assets to Azure and upserts the root index entry',
     artifactsDir: fixture.artifactsDir,
     outputDir: fixture.outputDir,
     steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
+    steamAppKey: STEAM_APP_KEY,
+    steamDataPath: fixture.steamDataPath,
     linuxDepotId: '123',
     windowsDepotId: '456',
     macosDepotId: '789',
@@ -182,14 +211,29 @@ test('publish-release uploads assets to Azure and upserts the root index entry',
   });
 
   const publicationResult = await readJson(path.join(fixture.outputDir, 'v0.1.0-beta.33.publish-result.json'));
+  const indexResponse = await fetchImpl(
+    'https://example.blob.core.windows.net/hagicode-steam/index.json?sp=racwl&sig=test-token'
+  );
+  const updatedRootIndex = JSON.parse(await indexResponse.text());
   assert.equal(result.releaseTag, 'v0.1.0-beta.33');
   assert.equal(publicationResult.azurePublication.versionDirectory, 'v0.1.0-beta.33/');
   assert.equal(publicationResult.metadata.artifactInventoryPath, 'v0.1.0-beta.33/v0.1.0-beta.33.artifact-inventory.json');
+  assert.equal(publicationResult.steamAppId, STEAM_APP_ID);
   assert.deepEqual(publicationResult.steamDepotIds, {
     linux: '123',
     windows: '456',
     macos: '789'
   });
+  assert.deepEqual(
+    updatedRootIndex.versions.map((entry) => ({
+      version: entry.version,
+      steamAppId: entry.steamAppId
+    })),
+    [
+      { version: 'v0.1.0-beta.33', steamAppId: STEAM_APP_ID },
+      { version: 'v0.1.0-beta.20', steamAppId: STEAM_APP_ID }
+    ]
+  );
 });
 
 test('publish-release retries transient Azure upload timeouts and completes publication', async () => {
@@ -219,6 +263,8 @@ test('publish-release retries transient Azure upload timeouts and completes publ
     artifactsDir: fixture.artifactsDir,
     outputDir: fixture.outputDir,
     steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
+    steamAppKey: STEAM_APP_KEY,
+    steamDataPath: fixture.steamDataPath,
     linuxDepotId: '123',
     windowsDepotId: '456',
     macosDepotId: '789',
@@ -265,6 +311,8 @@ test('publish-release overwrites the same Azure root index version entry on repe
     artifactsDir: fixture.artifactsDir,
     outputDir: fixture.outputDir,
     steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
+    steamAppKey: STEAM_APP_KEY,
+    steamDataPath: fixture.steamDataPath,
     linuxDepotId: '123',
     windowsDepotId: '456',
     macosDepotId: '789',
@@ -276,6 +324,8 @@ test('publish-release overwrites the same Azure root index version entry on repe
     artifactsDir: fixture.artifactsDir,
     outputDir: fixture.outputDir,
     steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
+    steamAppKey: STEAM_APP_KEY,
+    steamDataPath: fixture.steamDataPath,
     linuxDepotId: '124',
     windowsDepotId: '457',
     macosDepotId: '790',
@@ -289,6 +339,57 @@ test('publish-release overwrites the same Azure root index version entry on repe
     windows: '457',
     macos: '790'
   });
+  assert.equal(publicationResult.steamAppId, STEAM_APP_ID);
+});
+
+test('publish-release fails when the existing root index belongs to a different Steam app', async () => {
+  const fixture = await createPublicationFixture();
+  const fetchImpl = createAzureFetchStub({
+    existingRootIndex: {
+      schemaVersion: 1,
+      generatedAt: '2026-04-17T00:00:00.000Z',
+      versions: [
+        {
+          version: 'v0.1.0-beta.20',
+          metadata: {
+            buildManifestPath: 'v0.1.0-beta.20/v0.1.0-beta.20.build-manifest.json',
+            artifactInventoryPath: 'v0.1.0-beta.20/v0.1.0-beta.20.artifact-inventory.json',
+            checksumsPath: 'v0.1.0-beta.20/v0.1.0-beta.20.checksums.txt'
+          },
+          steamAppId: '888000',
+          steamDepotIds: {
+            linux: '10',
+            windows: '11',
+            macos: '12'
+          },
+          artifacts: [
+            {
+              platform: 'linux-x64',
+              name: 'hagicode-portable-linux-x64.zip',
+              path: 'v0.1.0-beta.20/hagicode-portable-linux-x64.zip'
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  await assert.rejects(
+    () =>
+      publishRelease({
+        planPath: fixture.planPath,
+        artifactsDir: fixture.artifactsDir,
+        outputDir: fixture.outputDir,
+        steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
+        steamAppKey: STEAM_APP_KEY,
+        steamDataPath: fixture.steamDataPath,
+        linuxDepotId: '123',
+        windowsDepotId: '456',
+        macosDepotId: '789',
+        fetchImpl
+      }),
+    /conflicts with current publication steamAppId/
+  );
 });
 
 test('publish-release fails when Azure upload does not remain addressable', async () => {
@@ -301,6 +402,8 @@ test('publish-release fails when Azure upload does not remain addressable', asyn
         artifactsDir: fixture.artifactsDir,
         outputDir: fixture.outputDir,
         steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
+        steamAppKey: STEAM_APP_KEY,
+        steamDataPath: fixture.steamDataPath,
         linuxDepotId: '123',
         windowsDepotId: '456',
         macosDepotId: '789',

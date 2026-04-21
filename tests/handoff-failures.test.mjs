@@ -5,11 +5,13 @@ import path from 'node:path';
 import { mkdtemp } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createArchive } from '../scripts/lib/archive.mjs';
+import { STEAM_PACKER_HANDOFF_SCHEMA } from '../scripts/lib/release-plan.mjs';
 import { readJson, writeJson } from '../scripts/lib/fs-utils.mjs';
-import { executePortableVersionHandoff } from '../scripts/run-portable-version-handoff.mjs';
+import { executeReleasePlan } from '../scripts/run-release-plan.mjs';
 import { createMockPortableToolchainConfig } from './helpers/portable-toolchain-fixture.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const STEAM_APP_KEY = 'hagicode';
 
 function fixturePath(...segments) {
   return path.join(repoRoot, 'tests', 'fixtures', ...segments);
@@ -22,7 +24,27 @@ async function createFixtureArchive(sourceDirectory, archivePath) {
 async function createPlanFixture(tempRoot, { dryRun = true } = {}) {
   const planPath = path.join(tempRoot, 'build-plan.json');
   const desktopArchivePath = path.join(tempRoot, 'hagicode-desktop-0.2.0.zip');
+  const steamDataPath = path.join(tempRoot, 'steam-index.json');
   await createFixtureArchive(fixturePath('desktop-fixture'), desktopArchivePath);
+  await writeJson(steamDataPath, {
+    version: '1.0.0',
+    updatedAt: '2026-04-21T00:00:00.000Z',
+    applications: [
+      {
+        key: STEAM_APP_KEY,
+        displayName: 'HagiCode',
+        kind: 'application',
+        parentKey: null,
+        storeAppId: '4625540',
+        storeUrl: 'https://store.steampowered.com/app/4625540/Hagicode/',
+        platformAppIds: {
+          windows: '4625541',
+          linux: '4625542',
+          macos: '4625543'
+        }
+      }
+    ]
+  });
 
   await writeJson(planPath, {
     schemaVersion: 2,
@@ -30,7 +52,7 @@ async function createPlanFixture(tempRoot, { dryRun = true } = {}) {
     repositories: {
       desktop: 'https://index.hagicode.com/desktop/index.json',
       service: 'https://index.hagicode.com/server/index.json',
-      portable: 'HagiCode-org/portable-version'
+      portable: 'HagiCode-org/release-orchestrator'
     },
     trigger: {
       type: 'workflow_dispatch',
@@ -88,7 +110,7 @@ async function createPlanFixture(tempRoot, { dryRun = true } = {}) {
       }
     },
     release: {
-      repository: 'HagiCode-org/portable-version',
+      repository: 'HagiCode-org/release-orchestrator',
       tag: 'v0.1.0-beta.33',
       name: 'Portable Version v0.1.0-beta.33',
       exists: false,
@@ -102,14 +124,14 @@ async function createPlanFixture(tempRoot, { dryRun = true } = {}) {
       skipReason: null
     },
     handoff: {
-      schema: 'portable-version-steam-packer-handoff/v1',
+      schema: STEAM_PACKER_HANDOFF_SCHEMA,
       producer: {
-        repository: 'HagiCode-org/portable-version',
-        workflow: 'portable-version-release'
+        repository: 'HagiCode-org/release-orchestrator',
+        workflow: 'release-orchestration'
       },
       consumer: {
         repository: 'HagiCode-org/steam_packer',
-        workflow: 'portable-version-package'
+        workflow: 'package-release'
       },
       publication: {
         container: 'hagicode-steam',
@@ -122,7 +144,8 @@ async function createPlanFixture(tempRoot, { dryRun = true } = {}) {
   return {
     planPath,
     desktopArchivePath,
-    serviceArchivePath: fixturePath('hagicode-0.1.0-beta.33-linux-x64-nort.zip')
+    serviceArchivePath: fixturePath('hagicode-0.1.0-beta.33-linux-x64-nort.zip'),
+    steamDataPath
   };
 }
 
@@ -138,7 +161,7 @@ test('delegated handoff fails during build-plan validation before packaging star
 
   await assert.rejects(
     () =>
-      executePortableVersionHandoff({
+      executeReleasePlan({
         planPath: invalidPlanPath,
         runRoot: path.join(tempRoot, 'run')
       }),
@@ -153,7 +176,7 @@ test('delegated handoff surfaces packaging-stage failures separately from plan v
 
   await assert.rejects(
     () =>
-      executePortableVersionHandoff({
+      executeReleasePlan({
         planPath: fixture.planPath,
         runRoot: path.join(tempRoot, 'run'),
         desktopAssetSource: fixture.desktopArchivePath,
@@ -172,13 +195,15 @@ test('delegated handoff surfaces Azure publication failures separately from pack
 
   await assert.rejects(
     () =>
-      executePortableVersionHandoff({
+      executeReleasePlan({
         planPath: fixture.planPath,
         runRoot: path.join(tempRoot, 'run'),
         desktopAssetSource: fixture.desktopArchivePath,
         serviceAssetSource: fixture.serviceArchivePath,
         toolchainConfig: toolchainFixture.configPath,
         steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
+        steamAppKey: STEAM_APP_KEY,
+        steamDataPath: fixture.steamDataPath,
         linuxDepotId: '123',
         windowsDepotId: '456',
         macosDepotId: '789',
@@ -207,5 +232,69 @@ test('delegated handoff surfaces Azure publication failures separately from pack
         }
       }),
     (error) => error.stage === 'azure-publication' && /Failed to upload Azure blob/.test(error.message)
+  );
+});
+
+test('delegated handoff fails before index write when steamAppKey is missing', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-handoff-missing-app-'));
+  const fixture = await createPlanFixture(tempRoot, { dryRun: true });
+  const toolchainFixture = await createMockPortableToolchainConfig(tempRoot);
+
+  await assert.rejects(
+    () =>
+      executeReleasePlan({
+        planPath: fixture.planPath,
+        runRoot: path.join(tempRoot, 'run'),
+        desktopAssetSource: fixture.desktopArchivePath,
+        serviceAssetSource: fixture.serviceArchivePath,
+        toolchainConfig: toolchainFixture.configPath,
+        steamDataPath: fixture.steamDataPath,
+        forceDryRun: true
+      }),
+    (error) => error.stage === 'azure-publication' && /steamAppKey/.test(error.message)
+  );
+});
+
+test('delegated handoff fails before index write when shared Steam data is missing', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-handoff-missing-data-'));
+  const fixture = await createPlanFixture(tempRoot, { dryRun: true });
+  const toolchainFixture = await createMockPortableToolchainConfig(tempRoot);
+
+  await assert.rejects(
+    () =>
+      executeReleasePlan({
+        planPath: fixture.planPath,
+        runRoot: path.join(tempRoot, 'run'),
+        desktopAssetSource: fixture.desktopArchivePath,
+        serviceAssetSource: fixture.serviceArchivePath,
+        toolchainConfig: toolchainFixture.configPath,
+        steamAppKey: STEAM_APP_KEY,
+        steamDataPath: path.join(tempRoot, 'missing-steam-index.json'),
+        forceDryRun: true
+      }),
+    (error) => error.stage === 'azure-publication' && /Failed to read shared Steam dataset/.test(error.message)
+  );
+});
+
+test('delegated handoff fails before index write when steamAppKey is unknown', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-handoff-unknown-key-'));
+  const fixture = await createPlanFixture(tempRoot, { dryRun: true });
+  const toolchainFixture = await createMockPortableToolchainConfig(tempRoot);
+
+  await assert.rejects(
+    () =>
+      executeReleasePlan({
+        planPath: fixture.planPath,
+        runRoot: path.join(tempRoot, 'run'),
+        desktopAssetSource: fixture.desktopArchivePath,
+        serviceAssetSource: fixture.serviceArchivePath,
+        toolchainConfig: toolchainFixture.configPath,
+        steamAppKey: 'missing-app',
+        steamDataPath: fixture.steamDataPath,
+        forceDryRun: true
+      }),
+    (error) =>
+      error.stage === 'azure-publication' &&
+      /does not define applications\[\]\.key "missing-app"/.test(error.message)
   );
 });

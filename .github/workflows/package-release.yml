@@ -20,10 +20,35 @@ on:
         required: false
       steam_depot_id_macos:
         required: false
+  workflow_dispatch:
+    inputs:
+      build_plan_artifact_name:
+        description: 'Artifact name that contains build-plan.json.'
+        required: false
+        type: string
+        default: steam-packer-build-plan
+      build_plan_run_id:
+        description: 'Workflow run ID to download the build plan artifact from when no repository file is supplied.'
+        required: false
+        type: string
+      build_plan_repository:
+        description: 'Repository that owns the build plan artifact when build_plan_run_id is set. Defaults to the current repository.'
+        required: false
+        type: string
+      build_plan_path:
+        description: 'Optional path to a committed build-plan JSON file in this repository. Overrides artifact download when provided.'
+        required: false
+        type: string
 
 permissions:
   contents: read
   actions: read
+
+env:
+  RESOLVED_BUILD_PLAN_ARTIFACT_NAME: resolved-build-plan
+  DESKTOP_AZURE_SAS_URL: ${{ secrets.desktop_azure_sas_url || secrets.STEAM_PACKER_DESKTOP_AZURE_SAS_URL || secrets.DESKTOP_AZURE_SAS_URL }}
+  SERVICE_AZURE_SAS_URL: ${{ secrets.service_azure_sas_url || secrets.STEAM_PACKER_SERVICE_AZURE_SAS_URL || secrets.SERVICE_AZURE_SAS_URL }}
+  STEAM_AZURE_SAS_URL: ${{ secrets.steam_azure_sas_url || secrets.STEAM_PACKER_STEAM_AZURE_SAS_URL || secrets.STEAM_AZURE_SAS_URL }}
 
 jobs:
   resolve_plan:
@@ -44,11 +69,41 @@ jobs:
           node-version: '22'
           package-manager-cache: false
 
-      - name: Download release plan artifact
+      - name: Validate manual build plan source
+        if: github.event_name == 'workflow_dispatch' && inputs.build_plan_path == '' && inputs.build_plan_run_id == ''
+        shell: bash
+        run: |
+          echo "::error::workflow_dispatch requires either build_plan_path or build_plan_run_id."
+          exit 1
+
+      - name: Materialize release plan from repository file
+        if: github.event_name == 'workflow_dispatch' && inputs.build_plan_path != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/build-plan"
+          if [ ! -f "${{ inputs.build_plan_path }}" ]; then
+            echo "::error::build_plan_path does not exist: ${{ inputs.build_plan_path }}"
+            exit 1
+          fi
+          cp "${{ inputs.build_plan_path }}" "$RUNNER_TEMP/build-plan/build-plan.json"
+
+      - name: Download release plan artifact from caller run
+        if: github.event_name == 'workflow_call'
         uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.build_plan_artifact_name }}
           path: ${{ runner.temp }}/build-plan
+
+      - name: Download release plan artifact from selected run
+        if: github.event_name == 'workflow_dispatch' && inputs.build_plan_path == ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.build_plan_artifact_name }}
+          path: ${{ runner.temp }}/build-plan
+          github-token: ${{ github.token }}
+          repository: ${{ inputs.build_plan_repository != '' && inputs.build_plan_repository || github.repository }}
+          run-id: ${{ inputs.build_plan_run_id }}
 
       - name: Validate release plan
         id: resolve
@@ -56,6 +111,13 @@ jobs:
         run: |
           node scripts/resolve-release-plan.mjs \
             --plan "$RUNNER_TEMP/build-plan/build-plan.json"
+
+      - name: Upload resolved release plan artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.RESOLVED_BUILD_PLAN_ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/build-plan/build-plan.json
+          if-no-files-found: error
 
   package:
     name: Package ${{ matrix.platform }}
@@ -75,16 +137,16 @@ jobs:
           node-version: '22'
           package-manager-cache: false
 
-      - name: Download release plan artifact
+      - name: Download resolved release plan artifact
         uses: actions/download-artifact@v8
         with:
-          name: ${{ inputs.build_plan_artifact_name }}
+          name: ${{ env.RESOLVED_BUILD_PLAN_ARTIFACT_NAME }}
           path: ${{ runner.temp }}/build-plan
 
       - name: Prepare Desktop archive workspace
         shell: bash
         env:
-          STEAM_PACKER_DESKTOP_AZURE_SAS_URL: ${{ secrets.desktop_azure_sas_url }}
+          STEAM_PACKER_DESKTOP_AZURE_SAS_URL: ${{ env.DESKTOP_AZURE_SAS_URL }}
         run: |
           node scripts/prepare-packaging-workspace.mjs \
             --plan "$RUNNER_TEMP/build-plan/build-plan.json" \
@@ -94,7 +156,7 @@ jobs:
       - name: Download and inject service payload
         shell: bash
         env:
-          STEAM_PACKER_SERVICE_AZURE_SAS_URL: ${{ secrets.service_azure_sas_url }}
+          STEAM_PACKER_SERVICE_AZURE_SAS_URL: ${{ env.SERVICE_AZURE_SAS_URL }}
         run: |
           node scripts/stage-portable-payload.mjs \
             --plan "$RUNNER_TEMP/build-plan/build-plan.json" \
@@ -155,10 +217,10 @@ jobs:
           node-version: '22'
           package-manager-cache: false
 
-      - name: Download release plan artifact
+      - name: Download resolved release plan artifact
         uses: actions/download-artifact@v8
         with:
-          name: ${{ inputs.build_plan_artifact_name }}
+          name: ${{ env.RESOLVED_BUILD_PLAN_ARTIFACT_NAME }}
           path: ${{ runner.temp }}/build-plan
 
       - name: Download package artifacts
@@ -171,7 +233,7 @@ jobs:
       - name: Publish release or emit dry-run report
         shell: bash
         env:
-          STEAM_PACKER_STEAM_AZURE_SAS_URL: ${{ secrets.steam_azure_sas_url }}
+          STEAM_PACKER_STEAM_AZURE_SAS_URL: ${{ env.STEAM_AZURE_SAS_URL }}
         run: |
           node scripts/publish-release.mjs \
             --plan "$RUNNER_TEMP/build-plan/build-plan.json" \

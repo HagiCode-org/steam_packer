@@ -167,8 +167,6 @@ async function main() {
   const platformNodeConfig = resolvePortableToolchainPlatform(toolchainConfig, values.platform);
   const token =
     values.token ??
-    process.env.STEAM_PACKER_GITHUB_TOKEN ??
-    process.env.PORTABLE_VERSION_GITHUB_TOKEN ??
     process.env.GITHUB_TOKEN ??
     process.env.GH_TOKEN;
   const toolchainRoots = resolveToolchainRoots(workspaceManifest.portableFixedRoot);

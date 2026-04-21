@@ -21,7 +21,7 @@ async function createFixtureArchive(sourceDirectory, archivePath) {
 }
 
 test('dry-run packaging stages payload and emits inventory metadata', async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'portable-version-dry-run-'));
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-dry-run-'));
   const planPath = path.join(tempRoot, 'build-plan.json');
   const workspacePath = path.join(tempRoot, 'workspace');
   const desktopArchivePath = path.join(tempRoot, 'hagicode-desktop-0.2.0.zip');
@@ -34,7 +34,7 @@ test('dry-run packaging stages payload and emits inventory metadata', async () =
     repositories: {
       desktop: 'https://index.hagicode.com/desktop/index.json',
       service: 'https://index.hagicode.com/server/index.json',
-      portable: 'HagiCode-org/portable-version'
+      portable: 'HagiCode-org/steam_packer'
     },
     downloads: {
       strategy: 'azure-blob-sas',

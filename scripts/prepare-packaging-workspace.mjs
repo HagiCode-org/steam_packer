@@ -71,10 +71,8 @@ async function main() {
   const azureSasUrl =
     values['azure-sas-url'] ??
     process.env.STEAM_PACKER_DESKTOP_AZURE_SAS_URL ??
-    process.env.PORTABLE_VERSION_DESKTOP_AZURE_SAS_URL ??
     process.env.DESKTOP_AZURE_SAS_URL ??
     process.env.DESKTOP_AZURE_BLOB_SAS_URL ??
-    process.env.PORTABLE_VERSION_AZURE_SAS_URL ??
     process.env.AZURE_BLOB_SAS_URL ??
     process.env.AZURE_SAS_URL;
   const downloadDirectory = path.join(workspacePath, 'downloads');

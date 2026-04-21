@@ -15,7 +15,11 @@ import {
   writePortableVersionRootIndex
 } from './lib/azure-blob.mjs';
 import { ensureDir, pathExists, readJson, writeJson } from './lib/fs-utils.mjs';
-import { DEFAULT_STEAM_DATA_PATH, resolveSteamApplication } from './lib/steam-data.mjs';
+import {
+  DEFAULT_STEAM_APP_KEY,
+  DEFAULT_STEAM_DATA_PATH,
+  resolveSteamPublicationIdentity
+} from './lib/steam-data.mjs';
 import { annotateError, appendSummary } from './lib/summary.mjs';
 
 function requireNonEmptyString(value, label) {
@@ -26,32 +30,9 @@ function requireNonEmptyString(value, label) {
   return normalized;
 }
 
-function resolveSteamDepotIds(options = {}) {
-  const steamDepotIds = {
-    linux:
-      options.linuxDepotId ??
-      process.env.STEAM_PACKER_STEAM_DEPOT_ID_LINUX ??
-      process.env.STEAM_DEPOT_ID_LINUX,
-    windows:
-      options.windowsDepotId ??
-      process.env.STEAM_PACKER_STEAM_DEPOT_ID_WINDOWS ??
-      process.env.STEAM_DEPOT_ID_WINDOWS,
-    macos:
-      options.macosDepotId ??
-      process.env.STEAM_PACKER_STEAM_DEPOT_ID_MACOS ??
-      process.env.STEAM_DEPOT_ID_MACOS
-  };
-
-  return {
-    linux: requireNonEmptyString(steamDepotIds.linux, 'steamDepotIds.linux'),
-    windows: requireNonEmptyString(steamDepotIds.windows, 'steamDepotIds.windows'),
-    macos: requireNonEmptyString(steamDepotIds.macos, 'steamDepotIds.macos')
-  };
-}
-
 function resolveSteamAppKey(value) {
   return requireNonEmptyString(
-    value ?? process.env.STEAM_PACKER_STEAM_APP_KEY ?? process.env.STEAM_APP_KEY,
+    value ?? process.env.STEAM_PACKER_STEAM_APP_KEY ?? process.env.STEAM_APP_KEY ?? DEFAULT_STEAM_APP_KEY,
     'steamAppKey'
   );
 }
@@ -71,6 +52,27 @@ function resolveSteamAzureSasUrl(value) {
     process.env.AZURE_SAS_URL;
 
   return sasUrl ? parseAzureSasUrl(sasUrl).toString() : null;
+}
+
+function assertLegacyDepotOverridesMatchSharedData(sharedSteamDepotIds, overrides = {}) {
+  const legacyDepotIds = {
+    linux: overrides.linuxDepotId,
+    windows: overrides.windowsDepotId,
+    macos: overrides.macosDepotId
+  };
+
+  for (const [platform, value] of Object.entries(legacyDepotIds)) {
+    if (value === undefined || value === null || String(value).trim() === '') {
+      continue;
+    }
+
+    const normalizedValue = requireNonEmptyString(value, `steamDepotIds.${platform}`);
+    if (normalizedValue !== sharedSteamDepotIds[platform]) {
+      throw new Error(
+        `Deprecated steamDepotIds.${platform} override ${JSON.stringify(normalizedValue)} conflicts with shared Steam dataset value ${JSON.stringify(sharedSteamDepotIds[platform])}.`
+      );
+    }
+  }
 }
 
 function buildMetadataBlobPaths(releaseTag) {
@@ -300,12 +302,14 @@ export async function publishRelease({
   });
   const steamAppKey = resolveSteamAppKey(steamAppKeyInput);
   const steamDataPath = resolveSteamDataPath(steamDataPathInput);
-  const { application } = await resolveSteamApplication({
+  const publicationIdentity = await resolveSteamPublicationIdentity({
     steamAppKey,
     steamDataPath
   });
-  const steamAppId = application.storeAppId;
-  const steamDepotIds = resolveSteamDepotIds({
+  const steamAppId = publicationIdentity.steamAppId;
+  const steamDepotIds = publicationIdentity.steamDepotIds;
+
+  assertLegacyDepotOverridesMatchSharedData(steamDepotIds, {
     linuxDepotId,
     windowsDepotId,
     macosDepotId
@@ -460,6 +464,7 @@ async function main() {
       'steam-azure-sas-url': { type: 'string' },
       'steam-app-key': { type: 'string' },
       'steam-data-path': { type: 'string' },
+      // Deprecated compatibility options. Publication now resolves depot ids from the shared Steam dataset.
       'linux-depot-id': { type: 'string' },
       'windows-depot-id': { type: 'string' },
       'macos-depot-id': { type: 'string' }

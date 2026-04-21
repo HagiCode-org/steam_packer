@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { readJson } from './fs-utils.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+export const DEFAULT_STEAM_APP_KEY = 'hagicode';
 
 export const DEFAULT_STEAM_DATA_PATH = path.resolve(
   repoRoot,
@@ -115,5 +116,27 @@ export async function resolveSteamApplication({ steamAppKey, steamDataPath = DEF
   return {
     dataset,
     application
+  };
+}
+
+export async function resolveSteamPublicationIdentity({
+  steamAppKey = DEFAULT_STEAM_APP_KEY,
+  steamDataPath = DEFAULT_STEAM_DATA_PATH
+} = {}) {
+  const { dataset, application } = await resolveSteamApplication({
+    steamAppKey,
+    steamDataPath
+  });
+
+  return {
+    dataset,
+    application,
+    steamAppKey: application.key,
+    steamAppId: application.storeAppId,
+    steamDepotIds: {
+      linux: application.platformAppIds.linux,
+      windows: application.platformAppIds.windows,
+      macos: application.platformAppIds.macos
+    }
   };
 }

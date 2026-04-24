@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url';
 import { createArchive, validateZipPaths } from '../scripts/lib/archive.mjs';
 import { runCommand } from '../scripts/lib/command.mjs';
 import { readJson, writeJson } from '../scripts/lib/fs-utils.mjs';
-import { createMockPortableToolchainConfig } from './helpers/portable-toolchain-fixture.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -26,7 +25,6 @@ test('dry-run packaging stages payload and emits inventory metadata', async () =
   const workspacePath = path.join(tempRoot, 'workspace');
   const desktopArchivePath = path.join(tempRoot, 'hagicode-desktop-0.2.0.zip');
   const serviceArchivePath = fixturePath('hagicode-0.1.0-beta.33-linux-x64-nort.zip');
-  const toolchainFixture = await createMockPortableToolchainConfig(tempRoot);
 
   await createFixtureArchive(fixturePath('desktop-fixture'), desktopArchivePath);
 
@@ -103,25 +101,11 @@ test('dry-run packaging stages payload and emits inventory metadata', async () =
   ]);
 
   await runCommand('node', [
-    path.join(repoRoot, 'scripts', 'stage-portable-toolchain.mjs'),
-    '--plan',
-    planPath,
-    '--platform',
-    'linux-x64',
-    '--workspace',
-    workspacePath,
-    '--toolchain-config',
-    toolchainFixture.configPath
-  ]);
-
-  await runCommand('node', [
     path.join(repoRoot, 'scripts', 'verify-portable-toolchain.mjs'),
     '--platform',
     'linux-x64',
     '--workspace',
-    workspacePath,
-    '--toolchain-config',
-    toolchainFixture.configPath
+    workspacePath
   ]);
 
   await runCommand('node', [
@@ -142,6 +126,7 @@ test('dry-run packaging stages payload and emits inventory metadata', async () =
   assert.equal(inventory.platform, 'linux-x64');
   assert.equal(inventory.artifacts[0].fileName, 'hagicode-portable-linux-x64.zip');
   assert.equal(toolchainReport.validationPassed, true);
+  assert.equal(toolchainReport.ownership, 'desktop-authored');
   assert.equal(payloadReport.serviceVersion, '0.1.0-beta.33');
   assert.match(payloadReport.downloadSource, /<sas-token-redacted>|hagicode-0\.1\.0-beta\.33-linux-x64-nort\.zip/);
   assert.match(inventory.toolchainValidationPath, /toolchain-validation-linux-x64\.json$/);
@@ -150,5 +135,6 @@ test('dry-run packaging stages payload and emits inventory metadata', async () =
   const archiveListing = (await validateZipPaths(packagedArchivePath)).join('\n');
   assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/toolchain-manifest\.json/);
   assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/bin\/openspec/);
-  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/env\/activate\.sh/);
+  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/bin\/skills/);
+  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/bin\/omniroute/);
 });

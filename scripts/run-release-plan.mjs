@@ -59,7 +59,6 @@ export async function executeReleasePlan({
   desktopAssetSource,
   serviceAssetSource,
   serviceAssetSourceMap,
-  toolchainConfig,
   forceDryRun = false,
   steamAzureSasUrl,
   steamAppKey,
@@ -105,16 +104,7 @@ export async function executeReleasePlan({
       }
       await runNodeScript('stage-portable-payload.mjs', stagePayloadArgs);
 
-      const stageToolchainArgs = [...sharedArgs];
-      if (toolchainConfig) {
-        stageToolchainArgs.push('--toolchain-config', toolchainConfig);
-      }
-      await runNodeScript('stage-portable-toolchain.mjs', stageToolchainArgs);
-
       const verifyArgs = ['--platform', platformId, '--workspace', platformRoot];
-      if (toolchainConfig) {
-        verifyArgs.push('--toolchain-config', toolchainConfig);
-      }
       await runNodeScript('verify-portable-toolchain.mjs', verifyArgs);
 
       const packageArgs = [...sharedArgs];
@@ -169,7 +159,6 @@ export async function main() {
       'desktop-asset-source': { type: 'string' },
       'service-asset-source': { type: 'string' },
       'service-asset-source-map': { type: 'string' },
-      'toolchain-config': { type: 'string' },
       'force-dry-run': { type: 'boolean', default: false },
       'steam-azure-sas-url': { type: 'string' },
       'steam-app-key': { type: 'string' },
@@ -192,7 +181,6 @@ export async function main() {
       desktopAssetSource: values['desktop-asset-source'],
       serviceAssetSource: values['service-asset-source'],
       serviceAssetSourceMap: values['service-asset-source-map'],
-      toolchainConfig: values['toolchain-config'],
       forceDryRun: values['force-dry-run'],
       steamAzureSasUrl: values['steam-azure-sas-url'],
       steamAppKey: values['steam-app-key'],

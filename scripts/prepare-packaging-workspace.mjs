@@ -14,6 +14,7 @@ import {
 import { annotateError, appendSummary } from './lib/summary.mjs';
 import { getPlatformConfig, getRequestedAssetPlatforms } from './lib/platforms.mjs';
 import { resolveToolchainRoots } from './lib/toolchain.mjs';
+import { validateDesktopToolchainContract } from './lib/desktop-toolchain-contract.mjs';
 
 async function directoryContainsPortableRoot(rootPath, portableFixedSegments) {
   return pathExists(path.join(rootPath, ...portableFixedSegments));
@@ -100,6 +101,10 @@ async function main() {
     throw new Error(`Desktop asset ${desktopAsset.name} does not contain ${portableFixedRoot}.`);
   }
   const toolchainRoots = resolveToolchainRoots(portableFixedRoot);
+  const toolchainValidation = await validateDesktopToolchainContract({
+    platformContentRoot: desktopAppRoot,
+    platformId: platform.id
+  });
 
   const workspaceManifest = {
     planPath,
@@ -121,6 +126,8 @@ async function main() {
     toolchainRoot: toolchainRoots.toolchainRoot,
     toolchainBinRoot: toolchainRoots.toolchainBinRoot,
     toolchainManifestPath: toolchainRoots.toolchainManifestPath,
+    toolchainActivationPolicy: toolchainValidation.activationPolicy,
+    bundledToolchainEnabled: toolchainValidation.activationPolicy?.enabled ?? false,
     dryRun: plan.build.dryRun
   };
   const workspaceManifestPath = path.join(workspacePath, 'workspace-manifest.json');

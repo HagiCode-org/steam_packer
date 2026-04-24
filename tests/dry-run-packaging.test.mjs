@@ -120,6 +120,7 @@ test('dry-run packaging stages payload and emits inventory metadata', async () =
   ]);
 
   const inventory = await readJson(path.join(workspacePath, 'artifact-inventory-linux-x64.json'));
+  const workspaceManifest = await readJson(path.join(workspacePath, 'workspace-manifest.json'));
   const toolchainReport = await readJson(path.join(workspacePath, 'toolchain-validation-linux-x64.json'));
   const payloadReport = await readJson(path.join(workspacePath, 'payload-validation-linux-x64.json'));
   assert.equal(inventory.artifacts.length, 1);
@@ -127,6 +128,11 @@ test('dry-run packaging stages payload and emits inventory metadata', async () =
   assert.equal(inventory.artifacts[0].fileName, 'hagicode-portable-linux-x64.zip');
   assert.equal(toolchainReport.validationPassed, true);
   assert.equal(toolchainReport.ownership, 'desktop-authored');
+  assert.equal(toolchainReport.bundledToolchainEnabled, true);
+  assert.equal(toolchainReport.activationPolicy.source, 'manifest-default');
+  assert.equal(workspaceManifest.bundledToolchainEnabled, true);
+  assert.equal(workspaceManifest.toolchainActivationPolicy.source, 'manifest-default');
+  assert.equal(inventory.toolchainActivationPolicy.source, 'manifest-default');
   assert.equal(payloadReport.serviceVersion, '0.1.0-beta.33');
   assert.match(payloadReport.downloadSource, /<sas-token-redacted>|hagicode-0\.1\.0-beta\.33-linux-x64-nort\.zip/);
   assert.match(inventory.toolchainValidationPath, /toolchain-validation-linux-x64\.json$/);

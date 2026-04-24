@@ -4,6 +4,7 @@ import { getPlatformConfig } from './platforms.mjs';
 
 const REQUIRED_COMMANDS = ['node', 'npm', 'openspec', 'skills', 'omniroute'];
 const REQUIRED_PACKAGES = ['openspec', 'skills', 'omniroute'];
+const STEAM_PACKER_CONSUMER = 'steam-packer';
 
 export function resolvePortableFixedRoot(platformContentRoot, platformId) {
   const platform = getPlatformConfig(platformId);
@@ -16,6 +17,35 @@ export function resolveDesktopToolchainRoot(platformContentRoot, platformId) {
 
 function isDesktopAuthoredManifest(manifest) {
   return manifest?.owner === 'hagicode-desktop' && manifest?.source === 'bundled-desktop';
+}
+
+export function resolveSteamPackerToolchainPolicy(manifest) {
+  const matrix = manifest?.defaultEnabledByConsumer;
+  if (!matrix || typeof matrix !== 'object' || !Object.hasOwn(matrix, STEAM_PACKER_CONSUMER)) {
+    return {
+      consumer: STEAM_PACKER_CONSUMER,
+      enabled: true,
+      source: 'legacy-fallback',
+      manifestDefault: null,
+    };
+  }
+
+  const manifestDefault = matrix[STEAM_PACKER_CONSUMER];
+  if (manifestDefault !== true) {
+    return {
+      consumer: STEAM_PACKER_CONSUMER,
+      enabled: false,
+      source: 'manifest-default',
+      manifestDefault,
+    };
+  }
+
+  return {
+    consumer: STEAM_PACKER_CONSUMER,
+    enabled: true,
+    source: 'manifest-default',
+    manifestDefault,
+  };
 }
 
 export async function detectLegacyToolchainContract(toolchainRoot, platformId) {
@@ -65,6 +95,10 @@ export async function validateDesktopToolchainContract({ platformContentRoot, pl
   if (manifest.platform !== platformId && !(platformId === 'osx-universal' && /^osx-/.test(manifest.platform))) {
     errors.push(`toolchain manifest platform ${manifest.platform ?? 'missing'} does not match ${platformId}.`);
   }
+  const activationPolicy = resolveSteamPackerToolchainPolicy(manifest);
+  if (!activationPolicy.enabled) {
+    errors.push(`toolchain manifest defaultEnabledByConsumer['${STEAM_PACKER_CONSUMER}'] must be true.`);
+  }
 
   for (const commandName of REQUIRED_COMMANDS) {
     const relativePath = manifest.commands?.[commandName];
@@ -92,6 +126,7 @@ export async function validateDesktopToolchainContract({ platformContentRoot, pl
     owner: manifest.owner,
     source: manifest.source,
     platform: manifest.platform,
+    activationPolicy,
     nodeVersion: manifest.node?.version ?? null,
     packageVersions: Object.fromEntries(
       REQUIRED_PACKAGES.map((name) => [name, manifest.packages?.[name]?.version ?? null])

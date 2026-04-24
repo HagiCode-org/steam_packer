@@ -33,6 +33,8 @@ async function main() {
     toolchainManifestPath: validation.manifestPath,
     owner: validation.owner ?? null,
     source: validation.source ?? null,
+    activationPolicy: validation.activationPolicy ?? null,
+    bundledToolchainEnabled: validation.activationPolicy?.enabled ?? false,
     nodeVersion: validation.nodeVersion ?? null,
     packageVersions: validation.packageVersions ?? {},
     legacyDetected: validation.legacy,
@@ -50,6 +52,7 @@ async function main() {
     `### Desktop toolchain contract verified for ${values.platform}`,
     `- Report: ${reportPath}`,
     `- Toolchain root: ${validation.toolchainRoot}`,
+    `- Activation: enabled=${validation.activationPolicy?.enabled ?? false} source=${validation.activationPolicy?.source ?? 'unknown'}`,
     `- Node: ${validation.nodeVersion ?? 'unknown'}`,
     `- Packages: ${Object.entries(validation.packageVersions ?? {}).map(([name, version]) => `${name}@${version}`).join(', ')}`
   ]);

@@ -65,6 +65,9 @@ async function main() {
   if (!toolchainValidation.validationPassed) {
     throw new Error(`Portable toolchain validation failed for ${values.platform}.`);
   }
+  if (workspaceManifest.bundledToolchainEnabled === false || toolchainValidation.bundledToolchainEnabled === false) {
+    throw new Error(`Portable toolchain is not enabled for ${values.platform}.`);
+  }
   const payloadValidationPath = path.join(workspacePath, `payload-validation-${values.platform}.json`);
   if (!(await pathExists(payloadValidationPath))) {
     throw new Error(`Portable payload validation report is missing at ${payloadValidationPath}.`);
@@ -105,6 +108,7 @@ async function main() {
     dryRun,
     payloadValidationPath,
     toolchainValidationPath,
+    toolchainActivationPolicy: workspaceManifest.toolchainActivationPolicy ?? toolchainValidation.activationPolicy ?? null,
     bundle,
     artifacts: inventory
   });

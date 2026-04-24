@@ -142,17 +142,7 @@ jobs:
             --platform "${{ matrix.platform }}" \
             --workspace "$RUNNER_TEMP/release-${{ matrix.platform }}"
 
-      - name: Stage portable Node and OpenSpec toolchain
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          node scripts/stage-portable-toolchain.mjs \
-            --plan "$RUNNER_TEMP/build-plan/build-plan.json" \
-            --platform "${{ matrix.platform }}" \
-            --workspace "$RUNNER_TEMP/release-${{ matrix.platform }}"
-
-      - name: Verify portable toolchain
+      - name: Verify Desktop-authored portable toolchain
         shell: bash
         run: |
           node scripts/verify-portable-toolchain.mjs \

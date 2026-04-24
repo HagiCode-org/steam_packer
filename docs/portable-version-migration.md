@@ -53,6 +53,10 @@ Failure stages are attributed as:
 
 `azure-publication` now reads both the canonical `steamAppId` and the per-platform `steamDepotIds` from the shared Steam dataset before dry-run or real publication writes the root index contract. `steamAppKey` defaults to `hagicode`; `--steam-app-key` remains only as an override when a caller needs a different shared dataset entry.
 
+### Toolchain ownership boundary
+
+`hagicode-desktop` builds and ships `portable-fixed/toolchain`. `steam_packer` must not actively download Node, run npm installs, or preinstall OpenSpec/Skills/Omniroute. Its packaging flow validates the Desktop-authored `toolchain-manifest.json` with `owner=hagicode-desktop` and `source=bundled-desktop`, then carries that validated directory into the final archive.
+
 The reusable `package-release` workflow now consumes the shared Steam dataset from `https://index.hagicode.com/steam/index.json` directly during publication. Local and standalone runs use the same online source by default, while `--steam-data-path` remains available when a maintainer needs to pin a local JSON fixture or a different explicit URL.
 
 ### Primary Troubleshooting Entry Points

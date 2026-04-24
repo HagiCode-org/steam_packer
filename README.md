@@ -75,9 +75,10 @@ node scripts/run-release-plan.mjs \
   --plan /path/to/build-plan.json \
   --desktop-asset-source /path/to/desktop.zip \
   --service-asset-source /path/to/service.zip \
-  --toolchain-config /path/to/portable-toolchain.json \
   --force-dry-run
 ```
+
+`steam_packer` does not download Node, install OpenSpec, or assemble the portable toolchain. The Desktop asset is the owner of `portable-fixed/toolchain`; this repository only verifies the Desktop-authored `toolchain-manifest.json` contract and packages the validated input.
 
 Result stages are attributed as:
 

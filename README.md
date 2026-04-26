@@ -40,6 +40,14 @@ Reusable workflow:
 
 - `.github/workflows/package-release.yml`
 
+Scheduled trigger behavior:
+
+- `package-release` runs automatically every 4 hours with `cron: 0 */4 * * *`.
+- Scheduled runs auto-resolve the latest Desktop index release and the latest Service index release.
+- Scheduled runs use the default publication targets: `linux-x64`, `win-x64`, and `osx-universal`.
+- The derived Portable Version release tag is checked before packaging. If that release already exists and no manual override is present, `build.shouldBuild=false` and the package/publish jobs are skipped.
+- The Actions summary records the trigger type, latest upstream versions, derived release tag, `should_build`, and the skip reason when packaging is skipped.
+
 Expected caller behavior:
 
 1. Produce a normalized build plan and upload it as an artifact.
@@ -53,6 +61,8 @@ Manual trigger behavior:
 - Manual dispatch auto-resolves the latest Desktop index release and the latest Service index release.
 - Manual dispatch defaults to the three supported publication targets: `linux-x64`, `win-x64`, and `osx-universal`.
 - Manual dispatch only exposes `force_rebuild` and `dry_run`; it does not require a build-plan parameter.
+- Set `force_rebuild=true` to package and publish even when the derived Portable Version release already exists.
+- Set `dry_run=true` to run packaging and emit release metadata without writing to the Azure Steam container.
 - Manual runs still require the same Azure SAS secrets as reusable runs.
 
 ## Local Verification

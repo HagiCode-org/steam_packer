@@ -2,6 +2,8 @@
 
 `steam_packer` stays independent. `portable-version` is just the current upstream caller for Portable Version packaging and Azure publication.
 
+`steam_packer` can also poll for server updates directly. Its `package-release` workflow runs on a repository schedule, resolves the latest Desktop and Service index entries, derives the Portable Version release tag from the Service version, and continues into the existing package/publish flow only when that release is missing. If the release already exists, the workflow records `should_build=false` and the skip reason, then stops before package and publish jobs.
+
 ## What Moved
 
 - Packaging-safe workspace assembly
@@ -28,13 +30,19 @@ npm run verify:dry-run
 
 This validates packaging without Azure writes and confirms that the merged metadata remains complete enough for publication and later Steam hydration.
 
+For GitHub Actions, maintainers can run `package-release` with `workflow_dispatch` and `dry_run=true` to exercise the same latest-version resolution and packaging path without publishing to the Azure Steam container.
+
 ### Force rebuild
 
 Regenerate the handoff payload with `repos/portable-version/scripts/resolve-build-plan.mjs`, set `force_rebuild=true` in that input, and pass the plan to `steam_packer`. The rebuild intent stays in the handoff payload and `steam_packer` executes the same release tag again while preserving root-index upsert semantics.
 
+For the repository-local manual path, use `workflow_dispatch` with `force_rebuild=true`. This keeps the scheduled-run default skip gate unchanged while allowing a maintainer to rebuild a release that already exists.
+
 ### Platform matrix
 
 `portable-version` continues to normalize platform intent. The delegated handoff already contains `platforms[]` and `platformMatrix.include[]`, so `steam_packer` should not infer or expand platforms interactively.
+
+Repository-local scheduled and manual runs use the same default platform matrix when no handoff artifact is provided: `linux-x64`, `win-x64`, and `osx-universal`.
 
 ### Failure attribution
 

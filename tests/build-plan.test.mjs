@@ -98,6 +98,39 @@ test('buildPlan selects latest desktop and service releases for the default thre
   assert.equal(plan.upstream.service.assetsByPlatform['osx-arm64'].name, 'hagicode-0.1.0-beta.34-osx-arm64-nort.zip');
 });
 
+test('buildPlan selects latest releases and default platforms for scheduled automation', async () => {
+  const plan = await buildPlan({
+    eventName: 'schedule',
+    eventPayload: {},
+    repositories: {
+      desktop: DESKTOP_INDEX_URL,
+      service: SERVICE_INDEX_URL,
+      portable: 'HagiCode-org/steam_packer'
+    },
+    azureSasUrls: {
+      desktop: 'https://example.blob.core.windows.net/desktop?sp=racwl&sig=test-token',
+      service: 'https://example.blob.core.windows.net/server?sp=racwl&sig=test-token'
+    },
+    findPortableRelease: async () => null,
+    fetchImpl: createFetchStub(),
+    now: '2026-04-21T00:00:00.000Z'
+  });
+
+  assert.equal(plan.trigger.type, 'schedule');
+  assert.deepEqual(plan.platforms, ['linux-x64', 'win-x64', 'osx-universal']);
+  assert.deepEqual(
+    plan.platformMatrix.include.map((entry) => entry.platform),
+    ['linux-x64', 'win-x64', 'osx-universal']
+  );
+  assert.equal(plan.upstream.desktop.version, 'v0.3.0');
+  assert.equal(plan.upstream.service.version, '0.1.0-beta.34');
+  assert.equal(plan.release.tag, 'v0.1.0-beta.34');
+  assert.equal(plan.release.exists, false);
+  assert.equal(plan.build.shouldBuild, true);
+  assert.equal(plan.build.forceRebuild, false);
+  assert.equal(plan.build.dryRun, false);
+});
+
 test('buildPlan respects dry_run and force_rebuild when the Azure release already exists', async () => {
   const plan = await buildPlan({
     eventName: 'workflow_dispatch',
@@ -154,6 +187,34 @@ test('buildPlan skips packaging when the latest Azure release already exists and
     now: '2026-04-21T00:00:00.000Z'
   });
 
+  assert.equal(plan.release.exists, true);
+  assert.equal(plan.build.shouldBuild, false);
+  assert.equal(plan.build.forceRebuild, false);
+  assert.match(plan.build.skipReason, /already exists/i);
+});
+
+test('buildPlan skips scheduled packaging when the derived Azure release already exists', async () => {
+  const plan = await buildPlan({
+    eventName: 'schedule',
+    eventPayload: {},
+    repositories: {
+      desktop: DESKTOP_INDEX_URL,
+      service: SERVICE_INDEX_URL,
+      portable: 'HagiCode-org/steam_packer'
+    },
+    azureSasUrls: {
+      desktop: 'https://example.blob.core.windows.net/desktop?sp=racwl&sig=test-token',
+      service: 'https://example.blob.core.windows.net/server?sp=racwl&sig=test-token'
+    },
+    findPortableRelease: async () => ({
+      tag_name: 'v0.1.0-beta.34',
+      html_url: 'https://github.com/HagiCode-org/steam_packer/releases/tag/v0.1.0-beta.34'
+    }),
+    fetchImpl: createFetchStub(),
+    now: '2026-04-21T00:00:00.000Z'
+  });
+
+  assert.equal(plan.trigger.type, 'schedule');
   assert.equal(plan.release.exists, true);
   assert.equal(plan.build.shouldBuild, false);
   assert.equal(plan.build.forceRebuild, false);

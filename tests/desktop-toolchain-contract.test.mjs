@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { cp, mkdir, mkdtemp } from 'node:fs/promises';
+import { cp, mkdtemp, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createArchive } from '../scripts/lib/archive.mjs';
 import { runCommand } from '../scripts/lib/command.mjs';
@@ -69,6 +69,23 @@ test('desktop toolchain contract enables legacy manifests without the policy fie
   assert.equal(validation.activationPolicy.manifestDefault, null);
 });
 
+test('desktop toolchain contract accepts bundled Desktop toolchain without manifest', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-toolchain-no-manifest-'));
+  const desktopRoot = await copyDesktopFixture(tempRoot);
+  await rm(manifestPath(desktopRoot), { force: true });
+
+  const validation = await validateDesktopToolchainContract({
+    platformContentRoot: desktopRoot,
+    platformId: 'linux-x64',
+  });
+
+  assert.equal(validation.valid, true);
+  assert.equal(validation.manifestPresent, false);
+  assert.equal(validation.contractMode, 'bundled-content-fallback');
+  assert.equal(validation.activationPolicy.enabled, true);
+  assert.equal(validation.activationPolicy.source, 'bundled-content-fallback');
+});
+
 test('workspace preparation persists legacy fallback activation policy', async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-workspace-policy-'));
   const desktopRoot = await copyDesktopFixture(tempRoot);
@@ -111,4 +128,45 @@ test('workspace preparation persists legacy fallback activation policy', async (
   const workspaceManifest = await readJson(path.join(workspacePath, 'workspace-manifest.json'));
   assert.equal(workspaceManifest.bundledToolchainEnabled, true);
   assert.equal(workspaceManifest.toolchainActivationPolicy.source, 'legacy-fallback');
+});
+
+test('workspace preparation persists bundled-content fallback when manifest is missing', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-workspace-no-manifest-'));
+  const desktopRoot = await copyDesktopFixture(tempRoot);
+  const desktopArchivePath = path.join(tempRoot, 'hagicode-desktop-0.2.0.zip');
+  const planPath = path.join(tempRoot, 'build-plan.json');
+  const workspacePath = path.join(tempRoot, 'workspace');
+  await rm(manifestPath(desktopRoot), { force: true });
+  await createArchive(desktopRoot, desktopArchivePath);
+  await writeJson(planPath, {
+    platforms: ['linux-x64'],
+    upstream: {
+      desktop: {
+        version: 'v0.2.0',
+        assetsByPlatform: {
+          'linux-x64': {
+            name: 'hagicode-desktop-0.2.0.zip',
+            path: 'v0.2.0/hagicode-desktop-0.2.0.zip',
+          },
+        },
+      },
+    },
+    build: { dryRun: true },
+  });
+
+  await runCommand('node', [
+    path.join(repoRoot, 'scripts', 'prepare-packaging-workspace.mjs'),
+    '--plan',
+    planPath,
+    '--platform',
+    'linux-x64',
+    '--workspace',
+    workspacePath,
+    '--desktop-asset-source',
+    desktopArchivePath,
+  ]);
+
+  const workspaceManifest = await readJson(path.join(workspacePath, 'workspace-manifest.json'));
+  assert.equal(workspaceManifest.bundledToolchainEnabled, true);
+  assert.equal(workspaceManifest.toolchainActivationPolicy.source, 'bundled-content-fallback');
 });

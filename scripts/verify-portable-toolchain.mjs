@@ -32,9 +32,15 @@ async function main() {
     contractMode: validation.contractMode ?? 'manifest',
     manifestPresent: validation.manifestPresent ?? true,
     toolchainRoot: validation.toolchainRoot,
+    canonicalToolchainRoot: validation.canonicalToolchainRoot ?? validation.toolchainRoot,
+    selectedRootSource: validation.selectedRootSource ?? 'canonical-toolchain',
     toolchainManifestPath: validation.manifestPath,
-    owner: validation.owner ?? null,
-    source: validation.source ?? null,
+    manifestMetadata: {
+      owner: validation.owner ?? null,
+      source: validation.source ?? null,
+      platform: validation.platform ?? values.platform,
+    },
+    runtimeCommands: validation.runtimeCommands ?? {},
     activationPolicy: validation.activationPolicy ?? null,
     bundledToolchainEnabled: validation.activationPolicy?.enabled ?? false,
     nodeVersion: validation.nodeVersion ?? null,
@@ -54,8 +60,10 @@ async function main() {
     `### Desktop toolchain contract verified for ${values.platform}`,
     `- Report: ${reportPath}`,
     `- Toolchain root: ${validation.toolchainRoot}`,
+    `- Toolchain root source: ${validation.selectedRootSource ?? 'canonical-toolchain'}`,
     `- Activation: enabled=${validation.activationPolicy?.enabled ?? false} source=${validation.activationPolicy?.source ?? 'unknown'}`,
     `- Node: ${validation.nodeVersion ?? 'unknown'}`,
+    `- Commands: node=${validation.runtimeCommands?.node ?? 'missing'}, npm=${validation.runtimeCommands?.npm ?? 'missing'}`,
     `- Packages: ${Object.entries(validation.packageVersions ?? {}).map(([name, version]) => `${name}@${version}`).join(', ')}`
   ]);
 

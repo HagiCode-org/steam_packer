@@ -125,6 +125,7 @@ async function stagePayloadMember({
     downloadPath,
     extractionPath,
     runtimeRoot,
+    validatedPayloadRoot: runtimeRoot,
     stagedRuntimeRoot: targetPath,
     requiredPaths: REQUIRED_PAYLOAD_PATHS.map((entry) => entry.replaceAll(path.sep, '/'))
   };
@@ -223,9 +224,10 @@ async function main() {
       downloadSource: singleMember.downloadSource,
       downloadPath: singleMember.downloadPath,
       extractionPath: singleMember.extractionPath,
-      runtimeRoot: singleMember.runtimeRoot,
+      validatedPayloadRoot: singleMember.validatedPayloadRoot,
       portableFixedRoot: workspaceManifest.portableFixedRoot,
       stagedCurrentPath,
+      embeddedTargetRoot: singleMember.stagedRuntimeRoot,
       requiredPaths: singleMember.requiredPaths
     };
   }
@@ -244,7 +246,8 @@ async function main() {
   } else {
     summaryLines.push(`- Asset: ${members[0].assetName}`);
     summaryLines.push(`- Download source: ${members[0].downloadSource}`);
-    summaryLines.push(`- Extracted root: ${members[0].runtimeRoot}`);
+    summaryLines.push(`- Validated payload root: ${members[0].validatedPayloadRoot}`);
+    summaryLines.push(`- Embedded target: ${members[0].stagedRuntimeRoot}`);
   }
   await appendSummary(summaryLines);
 

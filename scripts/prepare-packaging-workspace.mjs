@@ -60,11 +60,15 @@ async function validatePreparedDesktopWorkspace({ desktopWorkspace, platform }) 
     throw new Error(`Desktop workspace does not contain ${portableFixedRoot}.`);
   }
 
-  const toolchainRoots = resolveToolchainRoots(portableFixedRoot);
   const toolchainValidation = await validateDesktopToolchainContract({
     platformContentRoot: desktopAppRoot,
     platformId: platform.id
   });
+  const toolchainRoots = resolveToolchainRoots(
+    desktopAppRoot,
+    platform.id,
+    toolchainValidation.toolchainRoot,
+  );
 
   if (!toolchainValidation.valid) {
     throw new Error(toolchainValidation.errors.join('; '));
@@ -286,6 +290,7 @@ async function main() {
     toolchainRoot: toolchainRoots.toolchainRoot,
     toolchainBinRoot: toolchainRoots.toolchainBinRoot,
     toolchainManifestPath: toolchainRoots.toolchainManifestPath,
+    toolchainRootSource: toolchainValidation.selectedRootSource ?? 'canonical-toolchain',
     toolchainActivationPolicy: toolchainValidation.activationPolicy,
     bundledToolchainEnabled: toolchainValidation.activationPolicy?.enabled ?? false,
     dryRun: plan.build.dryRun
@@ -300,7 +305,8 @@ async function main() {
     `- Desktop asset platform: ${desktopAssetPlatform}`,
     `- Download source: ${sanitizeUrlForLogs(selectedAssetSource)}`,
     `- Workspace: ${workspacePath}`,
-    `- Portable root: ${portableFixedRoot}`
+    `- Portable root: ${portableFixedRoot}`,
+    `- Toolchain root: ${toolchainRoots.toolchainRoot}`
   ]);
 
   if (selectedDesktopAsset.name !== desktopAsset.name) {

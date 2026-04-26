@@ -24,11 +24,11 @@ async function createDesktopFixtureArchiveWithoutManifest(tempRoot, archivePath)
   const workingDirectory = path.join(tempRoot, 'desktop-fixture');
   await cp(sourceDirectory, workingDirectory, { recursive: true });
   await rm(
-    path.join(workingDirectory, 'resources', 'extra', 'portable-fixed', 'toolchain', 'toolchain-manifest.json'),
+    path.join(workingDirectory, 'resources', 'extra', 'toolchain', 'toolchain-manifest.json'),
     { force: true }
   );
   await rm(
-    path.join(workingDirectory, 'resources', 'extra', 'portable-fixed', 'toolchain', 'bin'),
+    path.join(workingDirectory, 'resources', 'extra', 'toolchain', 'bin'),
     { recursive: true, force: true }
   );
   await createArchive(workingDirectory, archivePath);
@@ -149,15 +149,19 @@ test('dry-run packaging stages payload and emits inventory metadata', async () =
   assert.equal(workspaceManifest.toolchainActivationPolicy.source, 'manifest-default');
   assert.equal(inventory.toolchainActivationPolicy.source, 'manifest-default');
   assert.equal(payloadReport.serviceVersion, '0.1.0-beta.33');
+  assert.match(payloadReport.validatedPayloadRoot, /service-payload|extracted/);
+  assert.match(payloadReport.embeddedTargetRoot, /portable-fixed[\\/]+current/);
   assert.match(payloadReport.downloadSource, /<sas-token-redacted>|hagicode-0\.1\.0-beta\.33-linux-x64-nort\.zip/);
   assert.match(inventory.toolchainValidationPath, /toolchain-validation-linux-x64\.json$/);
+  assert.equal(toolchainReport.runtimeCommands.node, 'node/bin/node');
+  assert.equal(toolchainReport.runtimeCommands.npm, 'node/bin/npm');
 
   const packagedArchivePath = inventory.artifacts[0].outputPath;
   const archiveListing = (await validateZipPaths(packagedArchivePath)).join('\n');
-  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/toolchain-manifest\.json/);
-  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/bin\/openspec/);
-  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/bin\/skills/);
-  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/bin\/omniroute/);
+  assert.match(archiveListing, /resources\/extra\/toolchain\/toolchain-manifest\.json/);
+  assert.match(archiveListing, /resources\/extra\/toolchain\/node\/bin\/node/);
+  assert.match(archiveListing, /resources\/extra\/toolchain\/node\/bin\/npm/);
+  assert.doesNotMatch(archiveListing, /resources\/extra\/toolchain\/bin\/openspec/);
 });
 
 test('dry-run packaging accepts Desktop-bundled toolchain without manifest', async () => {
@@ -270,11 +274,12 @@ test('dry-run packaging accepts Desktop-bundled toolchain without manifest', asy
   assert.equal(toolchainReport.contractMode, 'bundled-content-fallback');
   assert.equal(workspaceManifest.bundledToolchainEnabled, true);
   assert.equal(workspaceManifest.toolchainActivationPolicy.source, 'bundled-content-fallback');
+  assert.equal(toolchainReport.selectedRootSource, 'canonical-toolchain');
 
   const packagedArchivePath = inventory.artifacts[0].outputPath;
   const archiveListing = (await validateZipPaths(packagedArchivePath)).join('\n');
-  assert.doesNotMatch(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/toolchain-manifest\.json/);
-  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/node\/bin\/node/);
-  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/node\/bin\/npm/);
-  assert.doesNotMatch(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/bin\/openspec/);
+  assert.doesNotMatch(archiveListing, /resources\/extra\/toolchain\/toolchain-manifest\.json/);
+  assert.match(archiveListing, /resources\/extra\/toolchain\/node\/bin\/node/);
+  assert.match(archiveListing, /resources\/extra\/toolchain\/node\/bin\/npm/);
+  assert.doesNotMatch(archiveListing, /resources\/extra\/toolchain\/bin\/openspec/);
 });

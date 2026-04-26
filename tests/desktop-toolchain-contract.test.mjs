@@ -58,7 +58,7 @@ async function startStaticServer(routes) {
 }
 
 function manifestPath(desktopRoot) {
-  return path.join(desktopRoot, 'resources', 'extra', 'portable-fixed', 'toolchain', 'toolchain-manifest.json');
+  return path.join(desktopRoot, 'resources', 'extra', 'toolchain', 'toolchain-manifest.json');
 }
 
 async function validateFixtureWithPolicy(policyValue) {
@@ -112,7 +112,7 @@ test('desktop toolchain contract accepts bundled Desktop toolchain without manif
   const desktopRoot = await copyDesktopFixture(tempRoot);
   await rm(manifestPath(desktopRoot), { force: true });
   await rm(
-    path.join(desktopRoot, 'resources', 'extra', 'portable-fixed', 'toolchain', 'bin'),
+    path.join(desktopRoot, 'resources', 'extra', 'toolchain', 'bin'),
     { recursive: true, force: true }
   );
 
@@ -126,6 +126,7 @@ test('desktop toolchain contract accepts bundled Desktop toolchain without manif
   assert.equal(validation.contractMode, 'bundled-content-fallback');
   assert.equal(validation.activationPolicy.enabled, true);
   assert.equal(validation.activationPolicy.source, 'bundled-content-fallback');
+  assert.equal(validation.selectedRootSource, 'canonical-toolchain');
 });
 
 test('workspace preparation persists legacy fallback activation policy', async () => {
@@ -170,6 +171,7 @@ test('workspace preparation persists legacy fallback activation policy', async (
   const workspaceManifest = await readJson(path.join(workspacePath, 'workspace-manifest.json'));
   assert.equal(workspaceManifest.bundledToolchainEnabled, true);
   assert.equal(workspaceManifest.toolchainActivationPolicy.source, 'legacy-fallback');
+  assert.equal(workspaceManifest.toolchainRootSource, 'canonical-toolchain');
 });
 
 test('workspace preparation persists bundled-content fallback when manifest is missing', async () => {
@@ -180,7 +182,7 @@ test('workspace preparation persists bundled-content fallback when manifest is m
   const workspacePath = path.join(tempRoot, 'workspace');
   await rm(manifestPath(desktopRoot), { force: true });
   await rm(
-    path.join(desktopRoot, 'resources', 'extra', 'portable-fixed', 'toolchain', 'bin'),
+    path.join(desktopRoot, 'resources', 'extra', 'toolchain', 'bin'),
     { recursive: true, force: true }
   );
   await createArchive(desktopRoot, desktopArchivePath);
@@ -215,6 +217,7 @@ test('workspace preparation persists bundled-content fallback when manifest is m
   const workspaceManifest = await readJson(path.join(workspacePath, 'workspace-manifest.json'));
   assert.equal(workspaceManifest.bundledToolchainEnabled, true);
   assert.equal(workspaceManifest.toolchainActivationPolicy.source, 'bundled-content-fallback');
+  assert.equal(workspaceManifest.toolchainRootSource, 'canonical-toolchain');
 });
 
 test('workspace preparation falls back to an alternate desktop asset when the selected asset is missing the bundled toolchain', async () => {
@@ -226,7 +229,7 @@ test('workspace preparation falls back to an alternate desktop asset when the se
   const planPath = path.join(tempRoot, 'build-plan.json');
   const workspacePath = path.join(tempRoot, 'workspace');
 
-  await rm(path.join(brokenDesktopRoot, 'resources', 'extra', 'portable-fixed', 'toolchain'), {
+  await rm(path.join(brokenDesktopRoot, 'resources', 'extra', 'toolchain'), {
     recursive: true,
     force: true
   });

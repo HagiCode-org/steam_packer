@@ -443,11 +443,20 @@ export function resolveAssetDownloadUrl({ asset, sasUrl, overrideSource }) {
     return overrideSource;
   }
 
-  if (!asset?.path || String(asset.path).trim() === '') {
-    throw new Error(`Asset ${asset?.name ?? '<unknown>'} is missing index path metadata.`);
+  if (sasUrl) {
+    if (!asset?.path || String(asset.path).trim() === '') {
+      throw new Error(`Asset ${asset?.name ?? '<unknown>'} is missing index path metadata.`);
+    }
+
+    return buildSignedBlobUrl(sasUrl, asset.path);
   }
 
-  return buildSignedBlobUrl(sasUrl, asset.path);
+  const directUrl = asset?.directUrl ?? asset?.downloadUrl ?? asset?.url ?? null;
+  if (directUrl) {
+    return directUrl;
+  }
+
+  throw new Error(`Asset ${asset?.name ?? '<unknown>'} cannot be downloaded because neither a SAS URL nor a direct URL is available.`);
 }
 
 export function buildPortableVersionRootIndexUrl(sasUrl) {

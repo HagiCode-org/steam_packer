@@ -28,7 +28,13 @@ const PLATFORM_MAP = {
     id: 'linux-x64',
     runtimeKey: 'linux-x64-nort',
     runner: 'ubuntu-latest',
-    desktopAssetPatterns: [/^hagicode-desktop-[^-]+\.[^.]+\.zip$/i, /^hagicode-desktop-.*\.zip$/i, /\.appimage$/i],
+    desktopAssetPatterns: [
+      /^hagicode-desktop-[^-]+\.[^.]+\.zip$/i,
+      /^hagicode-desktop-.*\.zip$/i,
+      /^hagicode-desktop-[^-]+\.[^.]+\.tar\.gz$/i,
+      /^hagicode-desktop-.*\.tar\.gz$/i,
+      /\.appimage$/i
+    ],
     portableFixedSegments: ['resources', 'extra', 'portable-fixed'],
     toolchain: POSIX_TOOLCHAIN
   },

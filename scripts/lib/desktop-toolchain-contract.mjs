@@ -3,8 +3,8 @@ import { pathExists, readJson } from './fs-utils.mjs';
 import { getPlatformConfig } from './platforms.mjs';
 import { getNodeExecutableRelativePath, getNpmExecutableRelativePath } from './toolchain.mjs';
 
-const REQUIRED_COMMANDS = ['node', 'npm', 'openspec', 'skills', 'omniroute'];
-const REQUIRED_PACKAGES = ['openspec', 'skills', 'omniroute'];
+const REQUIRED_RUNTIME_COMMANDS = ['node', 'npm'];
+const MANAGED_PACKAGES = ['openspec', 'skills', 'omniroute'];
 const STEAM_PACKER_CONSUMER = 'steam-packer';
 
 export function resolvePortableFixedRoot(platformContentRoot, platformId) {
@@ -72,13 +72,9 @@ export async function detectLegacyToolchainContract(toolchainRoot, platformId) {
 
 function buildFallbackCommandMap(platformId) {
   const platform = getPlatformConfig(platformId);
-  const shimExtension = platform.toolchain.primaryShimExtension;
   return {
     node: getNodeExecutableRelativePath(platformId),
     npm: getNpmExecutableRelativePath(platformId),
-    openspec: path.join('bin', `openspec${shimExtension}`),
-    skills: path.join('bin', `skills${shimExtension}`),
-    omniroute: path.join('bin', `omniroute${shimExtension}`),
   };
 }
 
@@ -109,7 +105,7 @@ async function validateBundledDesktopToolchainWithoutManifest(toolchainRoot, pla
       manifestDefault: null,
     },
     nodeVersion: null,
-    packageVersions: Object.fromEntries(REQUIRED_PACKAGES.map((name) => [name, null])),
+    packageVersions: Object.fromEntries(MANAGED_PACKAGES.map((name) => [name, null])),
     errors,
   };
 }
@@ -144,7 +140,7 @@ export async function validateDesktopToolchainContract({ platformContentRoot, pl
     errors.push(`toolchain manifest defaultEnabledByConsumer['${STEAM_PACKER_CONSUMER}'] must be true.`);
   }
 
-  for (const commandName of REQUIRED_COMMANDS) {
+  for (const commandName of REQUIRED_RUNTIME_COMMANDS) {
     const relativePath = manifest.commands?.[commandName];
     if (!relativePath) {
       errors.push(`manifest commands.${commandName} is missing.`);
@@ -156,7 +152,7 @@ export async function validateDesktopToolchainContract({ platformContentRoot, pl
     }
   }
 
-  for (const packageName of REQUIRED_PACKAGES) {
+  for (const packageName of MANAGED_PACKAGES) {
     if (!manifest.packages?.[packageName]?.version) {
       errors.push(`manifest packages.${packageName}.version is missing.`);
     }
@@ -175,7 +171,7 @@ export async function validateDesktopToolchainContract({ platformContentRoot, pl
     activationPolicy,
     nodeVersion: manifest.node?.version ?? null,
     packageVersions: Object.fromEntries(
-      REQUIRED_PACKAGES.map((name) => [name, manifest.packages?.[name]?.version ?? null])
+      MANAGED_PACKAGES.map((name) => [name, manifest.packages?.[name]?.version ?? null])
     ),
     errors,
   };

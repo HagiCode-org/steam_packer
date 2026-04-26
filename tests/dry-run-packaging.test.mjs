@@ -27,6 +27,10 @@ async function createDesktopFixtureArchiveWithoutManifest(tempRoot, archivePath)
     path.join(workingDirectory, 'resources', 'extra', 'portable-fixed', 'toolchain', 'toolchain-manifest.json'),
     { force: true }
   );
+  await rm(
+    path.join(workingDirectory, 'resources', 'extra', 'portable-fixed', 'toolchain', 'bin'),
+    { recursive: true, force: true }
+  );
   await createArchive(workingDirectory, archivePath);
 }
 
@@ -270,7 +274,7 @@ test('dry-run packaging accepts Desktop-bundled toolchain without manifest', asy
   const packagedArchivePath = inventory.artifacts[0].outputPath;
   const archiveListing = (await validateZipPaths(packagedArchivePath)).join('\n');
   assert.doesNotMatch(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/toolchain-manifest\.json/);
-  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/bin\/openspec/);
-  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/bin\/skills/);
-  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/bin\/omniroute/);
+  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/node\/bin\/node/);
+  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/node\/bin\/npm/);
+  assert.doesNotMatch(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/bin\/openspec/);
 });

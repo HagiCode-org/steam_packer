@@ -1,6 +1,8 @@
 name: package-release
 
 on:
+  schedule:
+    - cron: '0 */4 * * *'
   workflow_call:
     inputs:
       build_plan_artifact_name:
@@ -69,8 +71,8 @@ jobs:
           name: ${{ inputs.build_plan_artifact_name }}
           path: ${{ runner.temp }}/build-plan
 
-      - name: Resolve latest build plan for manual dispatch
-        if: github.event_name == 'workflow_dispatch'
+      - name: Resolve latest build plan for automation
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}

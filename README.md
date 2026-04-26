@@ -2,7 +2,7 @@
 
 `steam_packer` is an independent packaging and Azure publication repository.
 
-It accepts a normalized release plan from any non-interactive caller, assembles the packaging workspace, stages the payload and bundled toolchain, repacks deterministic platform archives, uploads them to Azure Blob Storage, and refreshes the root `hagicode-steam/index.json` entry without changing the downstream Steam hydration contract.
+It accepts a normalized release plan from any non-interactive caller, assembles the packaging workspace, stages the payload, validates the Desktop-authored bundled toolchain, repacks deterministic platform archives, uploads them to Azure Blob Storage, and refreshes the root `hagicode-steam/index.json` entry without changing the downstream Steam hydration contract.
 
 ## Repository Role
 
@@ -88,7 +88,7 @@ node scripts/run-release-plan.mjs \
   --force-dry-run
 ```
 
-`steam_packer` does not download Node, install OpenSpec, or assemble the portable toolchain. The Desktop asset is the owner of `portable-fixed/toolchain`; this repository only verifies the Desktop-authored `toolchain-manifest.json` contract and packages the validated input.
+`steam_packer` does not download Node, install OpenSpec, or assemble the portable toolchain. The Desktop asset is the owner of `extra/toolchain`; this repository only verifies the Desktop-authored `toolchain-manifest.json` contract and packages the validated input.
 
 Result stages are attributed as:
 

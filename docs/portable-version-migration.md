@@ -63,13 +63,13 @@ Failure stages are attributed as:
 
 ### Toolchain ownership boundary
 
-`hagicode-desktop` builds and ships `portable-fixed/toolchain`. `steam_packer` must not actively download Node, run npm installs, or preinstall OpenSpec/Skills/Omniroute. Its packaging flow validates the Desktop-authored `toolchain-manifest.json` with `owner=hagicode-desktop` and `source=bundled-desktop`, then carries that validated directory into the final archive.
+`hagicode-desktop` builds and ships `extra/toolchain`. `steam_packer` must not actively download Node, run npm installs, or preinstall OpenSpec/Skills/Omniroute. Its packaging flow validates the Desktop-authored `toolchain-manifest.json` with `owner=hagicode-desktop` and `source=bundled-desktop`, then carries that validated directory into the final archive.
 
 Current Desktop builds bundle the Node/npm runtime and defer managed CLI packages such as OpenSpec, Skills, and OmniRoute through manifest metadata (`installMode=manual`, `installState=pending`). `steam_packer` therefore validates Node/npm plus Desktop-authored package metadata; it must not require preinstalled `openspec`, `skills`, or `omniroute` executables in the archive.
 
-Desktop also owns the consumer default-enable matrix in `defaultEnabledByConsumer`. Current Desktop-authored manifests set `desktop=false` and `steam-packer=true`. `steam_packer` treats `defaultEnabledByConsumer['steam-packer'] = true` as the supported explicit contract and rejects explicit `false`; manifests that predate the field are accepted with an enabled legacy fallback so older Desktop artifacts can still be repacked.
+Desktop also owns the consumer default-enable matrix in `defaultEnabledByConsumer`. Current Desktop-authored manifests set `desktop=true` and `steam-packer=true`. `steam_packer` treats `defaultEnabledByConsumer['steam-packer'] = true` as the supported explicit contract and rejects explicit `false`; manifests that predate the field are accepted with an enabled legacy fallback so older Desktop artifacts can still be repacked.
 
-Workspace preparation persists the effective decision in `workspace-manifest.json` as `toolchainActivationPolicy` and `bundledToolchainEnabled`. Later verification and packaging stages consume that metadata and the Desktop-authored `portable-fixed/toolchain`; they must not create another Node staging area or run a second package installation path.
+Workspace preparation persists the effective decision in `workspace-manifest.json` as `toolchainActivationPolicy`, `bundledToolchainEnabled`, and the selected toolchain root. Later verification and packaging stages consume that metadata and the Desktop-authored `extra/toolchain`; they must not create another Node staging area or run a second package installation path.
 
 The reusable `package-release` workflow now consumes the shared Steam dataset from `https://index.hagicode.com/steam/index.json` directly during publication. Local and standalone runs use the same online source by default, while `--steam-data-path` remains available when a maintainer needs to pin a local JSON fixture or a different explicit URL.
 

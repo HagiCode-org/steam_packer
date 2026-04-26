@@ -46,17 +46,12 @@ async function main() {
   getPlatformConfig(values.platform);
   const stagedCurrentPath = path.join(workspaceManifest.portableFixedRoot, 'current');
   const stagedToolchainPath = workspaceManifest.toolchainRoot ?? path.join(workspaceManifest.portableFixedRoot, 'toolchain');
-  const toolchainManifestPath =
-    workspaceManifest.toolchainManifestPath ?? path.join(stagedToolchainPath, 'toolchain-manifest.json');
   const toolchainValidationPath = path.join(workspacePath, `toolchain-validation-${values.platform}.json`);
   if (!(await pathExists(stagedCurrentPath))) {
     throw new Error(`Portable payload is not staged at ${stagedCurrentPath}.`);
   }
   if (!(await pathExists(stagedToolchainPath))) {
     throw new Error(`Portable toolchain is not staged at ${stagedToolchainPath}.`);
-  }
-  if (!(await pathExists(toolchainManifestPath))) {
-    throw new Error(`Portable toolchain manifest is missing at ${toolchainManifestPath}.`);
   }
   if (!(await pathExists(toolchainValidationPath))) {
     throw new Error(`Portable toolchain validation report is missing at ${toolchainValidationPath}.`);

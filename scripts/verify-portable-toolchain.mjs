@@ -29,6 +29,8 @@ async function main() {
     platform: values.platform,
     validationPassed: validation.valid,
     ownership: 'desktop-authored',
+    contractMode: validation.contractMode ?? 'manifest',
+    manifestPresent: validation.manifestPresent ?? true,
     toolchainRoot: validation.toolchainRoot,
     toolchainManifestPath: validation.manifestPath,
     owner: validation.owner ?? null,

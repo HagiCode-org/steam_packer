@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { pathExists, readJson } from './fs-utils.mjs';
 import { getPlatformConfig } from './platforms.mjs';
+import { getNodeExecutableRelativePath, getNpmExecutableRelativePath } from './toolchain.mjs';
 
 const REQUIRED_COMMANDS = ['node', 'npm', 'openspec', 'skills', 'omniroute'];
 const REQUIRED_PACKAGES = ['openspec', 'skills', 'omniroute'];
@@ -69,25 +70,76 @@ export async function detectLegacyToolchainContract(toolchainRoot, platformId) {
   };
 }
 
+function buildFallbackCommandMap(platformId) {
+  const platform = getPlatformConfig(platformId);
+  const shimExtension = platform.toolchain.primaryShimExtension;
+  return {
+    node: getNodeExecutableRelativePath(platformId),
+    npm: getNpmExecutableRelativePath(platformId),
+    openspec: path.join('bin', `openspec${shimExtension}`),
+    skills: path.join('bin', `skills${shimExtension}`),
+    omniroute: path.join('bin', `omniroute${shimExtension}`),
+  };
+}
+
+async function validateBundledDesktopToolchainWithoutManifest(toolchainRoot, platformId, manifestPath) {
+  const commandMap = buildFallbackCommandMap(platformId);
+  const errors = [];
+
+  for (const [commandName, relativePath] of Object.entries(commandMap)) {
+    if (!(await pathExists(path.join(toolchainRoot, relativePath)))) {
+      errors.push(`Bundled Desktop toolchain is missing ${commandName} at ${relativePath}.`);
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    legacy: true,
+    manifestPresent: false,
+    contractMode: 'bundled-content-fallback',
+    toolchainRoot,
+    manifestPath,
+    owner: null,
+    source: null,
+    platform: platformId,
+    activationPolicy: {
+      consumer: STEAM_PACKER_CONSUMER,
+      enabled: true,
+      source: 'bundled-content-fallback',
+      manifestDefault: null,
+    },
+    nodeVersion: null,
+    packageVersions: Object.fromEntries(REQUIRED_PACKAGES.map((name) => [name, null])),
+    errors,
+  };
+}
+
 export async function validateDesktopToolchainContract({ platformContentRoot, platformId }) {
   const toolchainRoot = resolveDesktopToolchainRoot(platformContentRoot, platformId);
   const manifestPath = path.join(toolchainRoot, 'toolchain-manifest.json');
-  const errors = [];
 
   if (!(await pathExists(manifestPath))) {
     const legacy = await detectLegacyToolchainContract(toolchainRoot, platformId);
+    if (legacy.legacy) {
+      const fallback = await validateBundledDesktopToolchainWithoutManifest(toolchainRoot, platformId, manifestPath);
+      if (!fallback.valid) {
+        fallback.errors.unshift(`Desktop-authored toolchain manifest is missing at ${manifestPath}.`);
+      }
+      return fallback;
+    }
+
     return {
       valid: false,
-      legacy: legacy.legacy,
+      legacy: false,
+      manifestPresent: false,
+      contractMode: 'missing-toolchain',
       toolchainRoot,
       manifestPath,
-      errors: [
-        `Desktop-authored toolchain manifest is missing at ${manifestPath}.`,
-        ...(legacy.legacy ? [`Legacy toolchain entries detected: ${legacy.presentEntries.join(', ')}`] : []),
-      ],
+      errors: [`Desktop-authored toolchain manifest is missing at ${manifestPath}.`],
     };
   }
 
+  const errors = [];
   const manifest = await readJson(manifestPath);
   if (!isDesktopAuthoredManifest(manifest)) {
     errors.push('toolchain-manifest.json is not marked owner=hagicode-desktop and source=bundled-desktop.');
@@ -121,6 +173,8 @@ export async function validateDesktopToolchainContract({ platformContentRoot, pl
   return {
     valid: errors.length === 0,
     legacy: false,
+    manifestPresent: true,
+    contractMode: 'manifest',
     toolchainRoot,
     manifestPath,
     owner: manifest.owner,

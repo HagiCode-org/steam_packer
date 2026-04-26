@@ -120,23 +120,15 @@ export async function validateDesktopToolchainContract({ platformContentRoot, pl
 
   if (!(await pathExists(manifestPath))) {
     const legacy = await detectLegacyToolchainContract(toolchainRoot, platformId);
-    if (legacy.legacy) {
-      const fallback = await validateBundledDesktopToolchainWithoutManifest(toolchainRoot, platformId, manifestPath);
-      if (!fallback.valid) {
-        fallback.errors.unshift(`Desktop-authored toolchain manifest is missing at ${manifestPath}.`);
-      }
-      return fallback;
+    const fallback = await validateBundledDesktopToolchainWithoutManifest(toolchainRoot, platformId, manifestPath);
+    fallback.legacy = legacy.legacy;
+
+    if (!fallback.valid) {
+      fallback.contractMode = 'missing-toolchain';
+      fallback.errors.unshift(`Desktop-authored toolchain manifest is missing at ${manifestPath}.`);
     }
 
-    return {
-      valid: false,
-      legacy: false,
-      manifestPresent: false,
-      contractMode: 'missing-toolchain',
-      toolchainRoot,
-      manifestPath,
-      errors: [`Desktop-authored toolchain manifest is missing at ${manifestPath}.`],
-    };
+    return fallback;
   }
 
   const errors = [];

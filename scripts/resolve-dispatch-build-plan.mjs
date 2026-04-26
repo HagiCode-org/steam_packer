@@ -75,12 +75,12 @@ export async function resolveDispatchBuildPlan({
 
   const selectedPlatforms = plan.platforms.join(', ');
   await appendSummary([
-    '## steam_packer manual release plan',
-    `- Trigger: ${plan.trigger.type}`,
+    '## steam_packer automated release plan',
+    `- Trigger type: ${plan.trigger.type}`,
     `- Desktop index: ${plan.upstream.desktop.manifestUrl}`,
-    `- Desktop version: ${plan.upstream.desktop.version}`,
+    `- Latest Desktop version: ${plan.upstream.desktop.version}`,
     `- Service index: ${plan.upstream.service.manifestUrl}`,
-    `- Service version: ${plan.upstream.service.version}`,
+    `- Latest Service version: ${plan.upstream.service.version}`,
     `- Platforms: ${selectedPlatforms}`,
     `- Derived release tag: ${plan.release.tag}`,
     `- Desktop Azure SAS: ${sanitizeUrlForLogs(desktopAzureSasUrl)}`,
@@ -88,7 +88,9 @@ export async function resolveDispatchBuildPlan({
     `- Steam Azure SAS: ${steamAzureSasUrl ? sanitizeUrlForLogs(steamAzureSasUrl) : '[not-configured]'}`,
     `- Release exists in Azure index: ${plan.release.exists ? 'yes' : 'no'}`,
     `- Build mode: ${plan.build.dryRun ? 'dry-run' : 'publish'}`,
-    plan.build.shouldBuild ? '- Packaging will continue.' : `- Packaging skipped: ${plan.build.skipReason}`
+    `- should_build: ${plan.build.shouldBuild ? 'true' : 'false'}`,
+    `- Skip reason: ${plan.build.skipReason ?? '[none]'}`,
+    plan.build.shouldBuild ? '- Packaging will continue.' : '- Packaging skipped before package/publish jobs.'
   ]);
 
   return {
@@ -188,7 +190,7 @@ if (isDirectExecution) {
   main().catch(async (error) => {
     annotateError(error.message);
     await appendSummary([
-      '## steam_packer manual release plan failed',
+      '## steam_packer automated release plan failed',
       `- ${error.message}`
     ]);
     console.error(error);

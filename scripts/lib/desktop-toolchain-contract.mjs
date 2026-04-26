@@ -1,7 +1,12 @@
 import path from 'node:path';
 import { pathExists, readJson } from './fs-utils.mjs';
 import { getPlatformConfig } from './platforms.mjs';
-import { getNodeExecutableRelativePath, getNpmExecutableRelativePath } from './toolchain.mjs';
+import {
+  getNodeExecutableRelativePath,
+  getNpmExecutableRelativePath,
+  resolveLegacyToolchainRoot,
+  resolveToolchainRoot,
+} from './toolchain.mjs';
 
 const REQUIRED_RUNTIME_COMMANDS = ['node', 'npm'];
 const MANAGED_PACKAGES = ['openspec', 'skills', 'omniroute'];
@@ -13,7 +18,7 @@ export function resolvePortableFixedRoot(platformContentRoot, platformId) {
 }
 
 export function resolveDesktopToolchainRoot(platformContentRoot, platformId) {
-  return path.join(resolvePortableFixedRoot(platformContentRoot, platformId), 'toolchain');
+  return resolveToolchainRoot(platformContentRoot, platformId);
 }
 
 function isDesktopAuthoredManifest(manifest) {
@@ -54,7 +59,8 @@ export async function detectLegacyToolchainContract(toolchainRoot, platformId) {
   const legacyEntries = [
     path.join('bin', `opsx${platform.toolchain.primaryShimExtension}`),
     path.join('bin', `openspec${platform.toolchain.primaryShimExtension}`),
-    path.join('node', ...platform.toolchain.nodeBinSegments, platform.toolchain.nodeExecutableName),
+    path.join('bin', `skills${platform.toolchain.primaryShimExtension}`),
+    path.join('bin', `omniroute${platform.toolchain.primaryShimExtension}`),
   ];
 
   const presentEntries = [];
@@ -78,6 +84,38 @@ function buildFallbackCommandMap(platformId) {
   };
 }
 
+async function resolveDesktopToolchainContractRoot(platformContentRoot, platformId) {
+  const canonicalToolchainRoot = resolveDesktopToolchainRoot(platformContentRoot, platformId);
+  if (await pathExists(canonicalToolchainRoot)) {
+    return {
+      toolchainRoot: canonicalToolchainRoot,
+      canonicalToolchainRoot,
+      legacyToolchainRoot: resolveLegacyToolchainRoot(platformContentRoot, platformId),
+      selectedRootSource: 'canonical-toolchain',
+      legacyLayout: false,
+    };
+  }
+
+  const legacyToolchainRoot = resolveLegacyToolchainRoot(platformContentRoot, platformId);
+  if (await pathExists(legacyToolchainRoot)) {
+    return {
+      toolchainRoot: legacyToolchainRoot,
+      canonicalToolchainRoot,
+      legacyToolchainRoot,
+      selectedRootSource: 'legacy-portable-fixed',
+      legacyLayout: true,
+    };
+  }
+
+  return {
+    toolchainRoot: canonicalToolchainRoot,
+    canonicalToolchainRoot,
+    legacyToolchainRoot,
+    selectedRootSource: 'missing-toolchain',
+    legacyLayout: false,
+  };
+}
+
 async function validateBundledDesktopToolchainWithoutManifest(toolchainRoot, platformId, manifestPath) {
   const commandMap = buildFallbackCommandMap(platformId);
   const errors = [];
@@ -94,10 +132,13 @@ async function validateBundledDesktopToolchainWithoutManifest(toolchainRoot, pla
     manifestPresent: false,
     contractMode: 'bundled-content-fallback',
     toolchainRoot,
+    canonicalToolchainRoot: toolchainRoot,
+    selectedRootSource: 'bundled-content-fallback',
     manifestPath,
     owner: null,
     source: null,
     platform: platformId,
+    runtimeCommands: commandMap,
     activationPolicy: {
       consumer: STEAM_PACKER_CONSUMER,
       enabled: true,
@@ -111,13 +152,16 @@ async function validateBundledDesktopToolchainWithoutManifest(toolchainRoot, pla
 }
 
 export async function validateDesktopToolchainContract({ platformContentRoot, platformId }) {
-  const toolchainRoot = resolveDesktopToolchainRoot(platformContentRoot, platformId);
+  const resolvedRoots = await resolveDesktopToolchainContractRoot(platformContentRoot, platformId);
+  const { toolchainRoot } = resolvedRoots;
   const manifestPath = path.join(toolchainRoot, 'toolchain-manifest.json');
 
   if (!(await pathExists(manifestPath))) {
     const legacy = await detectLegacyToolchainContract(toolchainRoot, platformId);
     const fallback = await validateBundledDesktopToolchainWithoutManifest(toolchainRoot, platformId, manifestPath);
-    fallback.legacy = legacy.legacy;
+    fallback.legacy = resolvedRoots.legacyLayout || legacy.legacy;
+    fallback.canonicalToolchainRoot = resolvedRoots.canonicalToolchainRoot;
+    fallback.selectedRootSource = resolvedRoots.selectedRootSource;
 
     if (!fallback.valid) {
       fallback.contractMode = 'missing-toolchain';
@@ -140,6 +184,7 @@ export async function validateDesktopToolchainContract({ platformContentRoot, pl
     errors.push(`toolchain manifest defaultEnabledByConsumer['${STEAM_PACKER_CONSUMER}'] must be true.`);
   }
 
+  const runtimeCommands = {};
   for (const commandName of REQUIRED_RUNTIME_COMMANDS) {
     const relativePath = manifest.commands?.[commandName];
     if (!relativePath) {
@@ -147,6 +192,7 @@ export async function validateDesktopToolchainContract({ platformContentRoot, pl
       continue;
     }
 
+    runtimeCommands[commandName] = relativePath;
     if (!(await pathExists(path.join(toolchainRoot, relativePath)))) {
       errors.push(`manifest commands.${commandName} points to missing file ${relativePath}.`);
     }
@@ -160,14 +206,17 @@ export async function validateDesktopToolchainContract({ platformContentRoot, pl
 
   return {
     valid: errors.length === 0,
-    legacy: false,
+    legacy: resolvedRoots.legacyLayout,
     manifestPresent: true,
     contractMode: 'manifest',
     toolchainRoot,
+    canonicalToolchainRoot: resolvedRoots.canonicalToolchainRoot,
+    selectedRootSource: resolvedRoots.selectedRootSource,
     manifestPath,
     owner: manifest.owner,
     source: manifest.source,
     platform: manifest.platform,
+    runtimeCommands,
     activationPolicy,
     nodeVersion: manifest.node?.version ?? null,
     packageVersions: Object.fromEntries(

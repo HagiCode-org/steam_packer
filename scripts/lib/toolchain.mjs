@@ -28,8 +28,21 @@ export function resolvePortableToolchainPlatform(config, platformId) {
   return entry;
 }
 
-export function resolveToolchainRoots(portableFixedRoot) {
-  const toolchainRoot = path.join(portableFixedRoot, 'toolchain');
+export function resolveToolchainRoot(platformContentRoot, platformId) {
+  const platform = getPlatformConfig(platformId);
+  const extraRootSegments = platform.portableFixedSegments.slice(0, -1);
+  return path.join(platformContentRoot, ...extraRootSegments, 'toolchain');
+}
+
+export function resolveLegacyToolchainRoot(platformContentRoot, platformId) {
+  const platform = getPlatformConfig(platformId);
+  return path.join(platformContentRoot, ...platform.portableFixedSegments, 'toolchain');
+}
+
+export function resolveToolchainRoots(basePath, platformId, resolvedToolchainRoot) {
+  const toolchainRoot = platformId
+    ? resolvedToolchainRoot ?? resolveToolchainRoot(basePath, platformId)
+    : path.join(basePath, 'toolchain');
   return {
     toolchainRoot,
     toolchainBinRoot: path.join(toolchainRoot, 'bin'),

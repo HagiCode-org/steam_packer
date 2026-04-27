@@ -150,7 +150,7 @@ test('dry-run packaging stages payload and emits inventory metadata', async () =
   assert.equal(inventory.toolchainActivationPolicy.source, 'manifest-default');
   assert.equal(payloadReport.serviceVersion, '0.1.0-beta.33');
   assert.match(payloadReport.validatedPayloadRoot, /service-payload|extracted/);
-  assert.match(payloadReport.embeddedTargetRoot, /portable-fixed[\\/]+current/);
+  assert.match(payloadReport.embeddedTargetRoot, /resources[\\/]extra[\\/]current/);
   assert.match(payloadReport.downloadSource, /<sas-token-redacted>|hagicode-0\.1\.0-beta\.33-linux-x64-nort\.zip/);
   assert.match(inventory.toolchainValidationPath, /toolchain-validation-linux-x64\.json$/);
   assert.equal(toolchainReport.runtimeCommands.node, 'node/bin/node');

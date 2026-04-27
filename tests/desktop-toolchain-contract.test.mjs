@@ -220,6 +220,48 @@ test('workspace preparation persists bundled-content fallback when manifest is m
   assert.equal(workspaceManifest.toolchainRootSource, 'canonical-toolchain');
 });
 
+test('workspace preparation uses extra root when desktop asset only contains canonical toolchain', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-workspace-toolchain-only-'));
+  const desktopRoot = await copyDesktopFixture(tempRoot);
+  const desktopArchivePath = path.join(tempRoot, 'hagicode-desktop-0.2.0.zip');
+  const planPath = path.join(tempRoot, 'build-plan.json');
+  const workspacePath = path.join(tempRoot, 'workspace');
+
+  await createArchive(desktopRoot, desktopArchivePath);
+  await writeJson(planPath, {
+    platforms: ['linux-x64'],
+    upstream: {
+      desktop: {
+        version: 'v0.2.0',
+        assetsByPlatform: {
+          'linux-x64': {
+            name: 'hagicode-desktop-0.2.0.zip',
+            path: 'v0.2.0/hagicode-desktop-0.2.0.zip',
+          },
+        },
+      },
+    },
+    build: { dryRun: true },
+  });
+
+  await runCommand('node', [
+    path.join(repoRoot, 'scripts', 'prepare-packaging-workspace.mjs'),
+    '--plan',
+    planPath,
+    '--platform',
+    'linux-x64',
+    '--workspace',
+    workspacePath,
+    '--desktop-asset-source',
+    desktopArchivePath,
+  ]);
+
+  const workspaceManifest = await readJson(path.join(workspacePath, 'workspace-manifest.json'));
+  assert.match(workspaceManifest.portableFixedRoot, /resources[\/]extra$/);
+  assert.equal(workspaceManifest.toolchainRootSource, 'canonical-toolchain');
+  assert.equal(workspaceManifest.bundledToolchainEnabled, true);
+});
+
 test('workspace preparation falls back to an alternate desktop asset when the selected asset is missing the bundled toolchain', async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-workspace-fallback-'));
   const brokenDesktopRoot = await copyDesktopFixture(path.join(tempRoot, 'broken'));

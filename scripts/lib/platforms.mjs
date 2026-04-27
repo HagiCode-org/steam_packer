@@ -35,7 +35,7 @@ const PLATFORM_MAP = {
       /^hagicode-desktop-.*\.tar\.gz$/i,
       /\.appimage$/i
     ],
-    portableFixedSegments: ['resources', 'extra', 'portable-fixed'],
+    portableFixedSegments: ['resources', 'extra'],
     toolchain: POSIX_TOOLCHAIN
   },
   'win-x64': {
@@ -43,7 +43,7 @@ const PLATFORM_MAP = {
     runtimeKey: 'win-x64-nort',
     runner: 'windows-latest',
     desktopAssetPatterns: [/^hagicode\.desktop\..*-unpacked\.zip$/i],
-    portableFixedSegments: ['resources', 'extra', 'portable-fixed'],
+    portableFixedSegments: ['resources', 'extra'],
     toolchain: WINDOWS_TOOLCHAIN
   },
   'osx-x64': {
@@ -52,7 +52,7 @@ const PLATFORM_MAP = {
     runner: 'macos-latest',
     desktopAssetPatterns: [/^hagicode\.desktop-(?!.*-arm64-mac\.zip$).*-mac\.zip$/i],
     appBundleName: 'Hagicode Desktop.app',
-    portableFixedSegments: ['Contents', 'Resources', 'extra', 'portable-fixed'],
+    portableFixedSegments: ['Contents', 'Resources', 'extra'],
     toolchain: POSIX_TOOLCHAIN
   },
   'osx-arm64': {
@@ -61,7 +61,7 @@ const PLATFORM_MAP = {
     runner: 'macos-latest',
     desktopAssetPatterns: [/^hagicode\.desktop-.*-arm64-mac\.zip$/i],
     appBundleName: 'Hagicode Desktop.app',
-    portableFixedSegments: ['Contents', 'Resources', 'extra', 'portable-fixed'],
+    portableFixedSegments: ['Contents', 'Resources', 'extra'],
     toolchain: POSIX_TOOLCHAIN
   },
   [UNIVERSAL_MACOS_PLATFORM]: {
@@ -72,7 +72,7 @@ const PLATFORM_MAP = {
     serviceAssetSourcePlatforms: [...UNIVERSAL_MACOS_MEMBER_PLATFORMS],
     desktopAssetPatterns: [/^hagicode\.desktop-(?!.*-arm64-mac\.zip$).*-mac\.zip$/i],
     appBundleName: 'Hagicode Desktop.app',
-    portableFixedSegments: ['Contents', 'Resources', 'extra', 'portable-fixed'],
+    portableFixedSegments: ['Contents', 'Resources', 'extra'],
     toolchain: POSIX_TOOLCHAIN,
     bundle: {
       kind: 'macos-universal',

@@ -4,7 +4,6 @@ import { getPlatformConfig } from './platforms.mjs';
 import {
   getNodeExecutableRelativePath,
   getNpmExecutableRelativePath,
-  resolveLegacyToolchainRoot,
   resolveToolchainRoot,
 } from './toolchain.mjs';
 
@@ -90,27 +89,14 @@ async function resolveDesktopToolchainContractRoot(platformContentRoot, platform
     return {
       toolchainRoot: canonicalToolchainRoot,
       canonicalToolchainRoot,
-      legacyToolchainRoot: resolveLegacyToolchainRoot(platformContentRoot, platformId),
       selectedRootSource: 'canonical-toolchain',
       legacyLayout: false,
-    };
-  }
-
-  const legacyToolchainRoot = resolveLegacyToolchainRoot(platformContentRoot, platformId);
-  if (await pathExists(legacyToolchainRoot)) {
-    return {
-      toolchainRoot: legacyToolchainRoot,
-      canonicalToolchainRoot,
-      legacyToolchainRoot,
-      selectedRootSource: 'legacy-portable-fixed',
-      legacyLayout: true,
     };
   }
 
   return {
     toolchainRoot: canonicalToolchainRoot,
     canonicalToolchainRoot,
-    legacyToolchainRoot,
     selectedRootSource: 'missing-toolchain',
     legacyLayout: false,
   };
@@ -159,7 +145,7 @@ export async function validateDesktopToolchainContract({ platformContentRoot, pl
   if (!(await pathExists(manifestPath))) {
     const legacy = await detectLegacyToolchainContract(toolchainRoot, platformId);
     const fallback = await validateBundledDesktopToolchainWithoutManifest(toolchainRoot, platformId, manifestPath);
-    fallback.legacy = resolvedRoots.legacyLayout || legacy.legacy;
+    fallback.legacy = legacy.legacy;
     fallback.canonicalToolchainRoot = resolvedRoots.canonicalToolchainRoot;
     fallback.selectedRootSource = resolvedRoots.selectedRootSource;
 

@@ -21,6 +21,8 @@ import {
 } from './lib/steam-data.mjs';
 import { annotateError, appendSummary } from './lib/summary.mjs';
 
+const DEFAULT_PUBLICATION_UPLOAD_CONCURRENCY = 3;
+
 function requireNonEmptyString(value, label) {
   const normalized = String(value ?? '').trim();
   if (!normalized) {
@@ -246,22 +248,79 @@ function buildResultVersionEntry({ plan, publicationArtifacts, steamAppId, steam
   });
 }
 
-async function uploadPublicationArtifacts({ steamAzureSasUrl, uploads, fetchImpl }) {
-  const uploaded = [];
-  for (const [index, upload] of uploads.entries()) {
-    console.log(
-      `[publish-release] Uploading ${index + 1}/${uploads.length}: ${upload.blobPath} (${upload.kind}${upload.platform ? `, ${upload.platform}` : ''})`
-    );
-    uploaded.push(
-      await uploadAzureBlob({
+async function runBoundedParallel(items, worker, { concurrency = DEFAULT_PUBLICATION_UPLOAD_CONCURRENCY } = {}) {
+  if (!Array.isArray(items)) {
+    throw new Error('Bounded parallel execution requires an array of items.');
+  }
+
+  const normalizedConcurrency = Math.max(1, Math.floor(Number(concurrency) || 1));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  }
+
+  const workerCount = Math.min(normalizedConcurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  return results;
+}
+
+function splitPublicationUploads(uploads) {
+  return {
+    archiveUploads: uploads.filter((upload) => upload.kind === 'archive'),
+    metadataUploads: uploads.filter((upload) => upload.kind !== 'archive')
+  };
+}
+
+async function uploadPublicationStep({ stepName, uploads, steamAzureSasUrl, fetchImpl }) {
+  if (uploads.length === 0) {
+    console.log(`[publish-release] ${stepName}: no blobs to upload`);
+    return [];
+  }
+
+  console.log(`[publish-release] ${stepName}: uploading ${uploads.length} blobs with bounded parallelism`);
+  return runBoundedParallel(
+    uploads,
+    async (upload, index) => {
+      console.log(
+        `[publish-release] ${stepName}: starting ${index + 1}/${uploads.length}: ${upload.blobPath} (${upload.kind}${upload.platform ? `, ${upload.platform}` : ''})`
+      );
+      const uploaded = await uploadAzureBlob({
         sasUrl: steamAzureSasUrl,
         blobPath: upload.blobPath,
         filePath: upload.filePath,
         fetchImpl
-      })
-    );
-  }
-  return uploaded;
+      });
+      console.log(
+        `[publish-release] ${stepName}: completed ${index + 1}/${uploads.length}: ${upload.blobPath}`
+      );
+      return uploaded;
+    },
+    { concurrency: DEFAULT_PUBLICATION_UPLOAD_CONCURRENCY }
+  );
+}
+
+async function uploadPublicationArtifacts({ steamAzureSasUrl, uploads, fetchImpl }) {
+  const { archiveUploads, metadataUploads } = splitPublicationUploads(uploads);
+  const uploadedArchives = await uploadPublicationStep({
+    stepName: 'Step 1 upload release archives',
+    uploads: archiveUploads,
+    steamAzureSasUrl,
+    fetchImpl
+  });
+  const uploadedMetadata = await uploadPublicationStep({
+    stepName: 'Step 2 upload release metadata',
+    uploads: metadataUploads,
+    steamAzureSasUrl,
+    fetchImpl
+  });
+
+  return [...uploadedArchives, ...uploadedMetadata];
 }
 
 function ensureUploadedBlobsAreVisible({ visibleBlobNames, expectedBlobPaths, releaseTag }) {
@@ -368,7 +427,7 @@ export async function publishRelease({
     uploads: publicationArtifacts.uploads,
     fetchImpl
   });
-  console.log(`[publish-release] Uploaded ${uploadedBlobs.length} blobs for ${releaseTag}, verifying Azure visibility`);
+  console.log(`[publish-release] Step 3 verify Azure visibility: ${uploadedBlobs.length} blobs uploaded for ${releaseTag}`);
   const visibleBlobs = await listAzureBlobs({
     sasUrl: steamAzureSasUrl,
     prefix: `${releaseTag}/`,

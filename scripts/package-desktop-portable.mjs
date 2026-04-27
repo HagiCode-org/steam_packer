@@ -45,7 +45,7 @@ async function main() {
   const workspaceManifest = await readJson(path.join(workspacePath, 'workspace-manifest.json'));
   getPlatformConfig(values.platform);
   const stagedCurrentPath = path.join(workspaceManifest.portableFixedRoot, 'current');
-  const stagedToolchainPath = workspaceManifest.toolchainRoot ?? path.join(path.dirname(workspaceManifest.portableFixedRoot), 'toolchain');
+  const stagedToolchainPath = workspaceManifest.toolchainRoot ?? path.join(workspaceManifest.portableFixedRoot, 'toolchain');
   const toolchainValidationPath = path.join(workspacePath, `toolchain-validation-${values.platform}.json`);
   if (!(await pathExists(stagedCurrentPath))) {
     throw new Error(`Portable payload is not staged at ${stagedCurrentPath}.`);

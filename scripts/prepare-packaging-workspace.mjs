@@ -14,28 +14,39 @@ import {
 import { fetchIndexManifest, getAssetEntries, resolveVersionEntry } from './lib/index-source.mjs';
 import { annotateError, appendSummary } from './lib/summary.mjs';
 import { getPlatformConfig, getRequestedAssetPlatforms } from './lib/platforms.mjs';
-import { resolveToolchainRoots } from './lib/toolchain.mjs';
+import { resolveToolchainRoot, resolveToolchainRoots } from './lib/toolchain.mjs';
 import { validateDesktopToolchainContract } from './lib/desktop-toolchain-contract.mjs';
 
 async function directoryContainsPortableRoot(rootPath, portableFixedSegments) {
   return pathExists(path.join(rootPath, ...portableFixedSegments));
 }
 
+async function directoryContainsDesktopToolchain(rootPath, platform) {
+  return pathExists(path.join(resolveToolchainRoot(rootPath, platform.id), 'toolchain-manifest.json'));
+}
+
+async function directoryLooksLikeDesktopAppRoot(rootPath, platform) {
+  return (
+    (await directoryContainsPortableRoot(rootPath, platform.portableFixedSegments)) ||
+    (await directoryContainsDesktopToolchain(rootPath, platform))
+  );
+}
+
 async function resolveDesktopAppRoot(extractionRoot, platform) {
-  if (await directoryContainsPortableRoot(extractionRoot, platform.portableFixedSegments)) {
+  if (await directoryLooksLikeDesktopAppRoot(extractionRoot, platform)) {
     return extractionRoot;
   }
 
   if (platform.appBundleName) {
     const directAppRoot = path.join(extractionRoot, platform.appBundleName);
-    if (await directoryContainsPortableRoot(directAppRoot, platform.portableFixedSegments)) {
+    if (await directoryLooksLikeDesktopAppRoot(directAppRoot, platform)) {
       return directAppRoot;
     }
   }
 
   const discoveredRoot = await findFirstMatchingDirectory(
     extractionRoot,
-    async (candidate) => directoryContainsPortableRoot(candidate, platform.portableFixedSegments)
+    async (candidate) => directoryLooksLikeDesktopAppRoot(candidate, platform)
   );
   if (discoveredRoot) {
     return discoveredRoot;
@@ -56,9 +67,7 @@ function matchesPlatformDesktopAsset(asset, platform) {
 async function validatePreparedDesktopWorkspace({ desktopWorkspace, platform }) {
   const desktopAppRoot = await resolveDesktopAppRoot(desktopWorkspace, platform);
   const portableFixedRoot = path.join(desktopAppRoot, ...platform.portableFixedSegments);
-  if (!(await pathExists(portableFixedRoot))) {
-    throw new Error(`Desktop workspace does not contain ${portableFixedRoot}.`);
-  }
+  await ensureDir(portableFixedRoot);
 
   const toolchainValidation = await validateDesktopToolchainContract({
     platformContentRoot: desktopAppRoot,

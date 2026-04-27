@@ -1,1 +1,0 @@
-Fixture portable payload placeholder.

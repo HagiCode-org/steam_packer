@@ -154,10 +154,14 @@ test('dry-run packaging stages payload and emits inventory metadata', async () =
   assert.match(payloadReport.downloadSource, /<sas-token-redacted>|hagicode-0\.1\.0-beta\.33-linux-x64-nort\.zip/);
   assert.match(inventory.toolchainValidationPath, /toolchain-validation-linux-x64\.json$/);
   assert.deepEqual(workspaceManifest.envConfig, {
-    HAGICODE_MODE: 'steam'
+    HAGICODE_MODE: 'steam',
+    HAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED: 'true'
   });
   assert.match(workspaceManifest.envFilePath, /hagicode\.env$/);
-  assert.equal(await readFile(workspaceManifest.envFilePath, 'utf8'), 'HAGICODE_MODE=steam\n');
+  assert.equal(
+    await readFile(workspaceManifest.envFilePath, 'utf8'),
+    'HAGICODE_MODE=steam\nHAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED=true\n'
+  );
   assert.equal(toolchainReport.runtimeCommands.node, 'node/bin/node');
   assert.equal(toolchainReport.runtimeCommands.npm, 'node/bin/npm');
 
@@ -171,7 +175,10 @@ test('dry-run packaging stages payload and emits inventory metadata', async () =
 
   const extractedArchiveRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-dry-run-extract-'));
   await extractArchive(packagedArchivePath, extractedArchiveRoot);
-  assert.equal(await readFile(path.join(extractedArchiveRoot, 'hagicode.env'), 'utf8'), 'HAGICODE_MODE=steam\n');
+  assert.equal(
+    await readFile(path.join(extractedArchiveRoot, 'hagicode.env'), 'utf8'),
+    'HAGICODE_MODE=steam\nHAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED=true\n'
+  );
 });
 
 test('dry-run packaging accepts Desktop-bundled toolchain without manifest', async () => {

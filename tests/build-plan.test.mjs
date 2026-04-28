@@ -93,7 +93,8 @@ test('buildPlan selects latest desktop and service releases for the default thre
   assert.equal(plan.build.forceRebuild, false);
   assert.equal(plan.build.dryRun, false);
   assert.deepEqual(plan.envConfig, {
-    HAGICODE_MODE: 'steam'
+    HAGICODE_MODE: 'steam',
+    HAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED: 'true'
   });
   assert.equal(plan.downloads.desktop.containerUrl, 'https://example.blob.core.windows.net/desktop/');
   assert.equal(plan.downloads.service.containerUrl, 'https://example.blob.core.windows.net/server/');
@@ -170,7 +171,8 @@ test('buildPlan respects dry_run and force_rebuild when the Azure release alread
   assert.equal(plan.build.forceRebuild, true);
   assert.equal(plan.build.dryRun, true);
   assert.deepEqual(plan.envConfig, {
-    HAGICODE_MODE: 'steam'
+    HAGICODE_MODE: 'steam',
+    HAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED: 'true'
   });
   assert.equal(plan.build.skipReason, null);
 });
@@ -203,6 +205,7 @@ test('buildPlan normalizes additional HAGICODE env config from workflow inputs',
 
   assert.deepEqual(plan.envConfig, {
     HAGICODE_MODE: 'steam',
+    HAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED: 'true',
     HAGICODE_LOG_LEVEL: 'debug',
     HAGICODE_DEBUG: 'true'
   });
@@ -235,6 +238,7 @@ test('resolveDispatchBuildPlan applies the same envConfig normalization for loca
   const writtenPlan = await readJson(outputPath);
   assert.deepEqual(result.plan.envConfig, {
     HAGICODE_MODE: 'steam',
+    HAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED: 'true',
     HAGICODE_LOG_LEVEL: 'info'
   });
   assert.deepEqual(writtenPlan.envConfig, result.plan.envConfig);

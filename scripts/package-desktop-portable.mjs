@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { createArchive } from './lib/archive.mjs';
+import { createArchive, validateZipPaths } from './lib/archive.mjs';
 import { createArtifactRecord } from './lib/artifacts.mjs';
 import { writeChecksumFile } from './lib/checksum.mjs';
 import { ensureDir, pathExists, readJson, writeJson } from './lib/fs-utils.mjs';
@@ -72,6 +72,9 @@ async function main() {
   if (bundle?.kind === 'macos-universal') {
     await validateUniversalBundle(bundle, stagedCurrentPath);
   }
+  if (!workspaceManifest.envFilePath || !(await pathExists(workspaceManifest.envFilePath))) {
+    throw new Error(`hagicode.env is missing at ${workspaceManifest.envFilePath ?? '[unresolved]'}.`);
+  }
 
   await ensureDir(workspaceManifest.outputDirectory);
 
@@ -83,6 +86,14 @@ async function main() {
   );
   const packagedArchivePath = path.join(workspaceManifest.outputDirectory, packagedFileName);
   await createArchive(workspaceManifest.desktopWorkspace, packagedArchivePath);
+  const archivePaths = await validateZipPaths(packagedArchivePath);
+  const expectedEnvArchivePath = path
+    .relative(workspaceManifest.desktopWorkspace, workspaceManifest.envFilePath)
+    .split(path.sep)
+    .join('/');
+  if (!archivePaths.includes(expectedEnvArchivePath)) {
+    throw new Error(`Packaged archive is missing ${expectedEnvArchivePath}.`);
+  }
   const inventory = [
     await createArtifactRecord({
       archivePath: packagedArchivePath,
@@ -116,6 +127,7 @@ async function main() {
     `- Inventory: ${inventoryPath}`,
     `- Checksums: ${checksumsPath}`,
     `- Toolchain validation: ${toolchainValidationPath}`,
+    `- hagicode.env: ${workspaceManifest.envFilePath}`,
     `- Artifacts: ${inventory.map((entry) => entry.fileName).join(', ')}`
   ];
   if (bundle?.kind === 'macos-universal') {

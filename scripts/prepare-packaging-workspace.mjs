@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import path from 'node:path';
+import { writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { downloadFromSource, resolveAssetDownloadUrl, sanitizeUrlForLogs } from './lib/azure-blob.mjs';
 import { extractArchive } from './lib/archive.mjs';
+import { normalizeSteamEnvConfig, serializeEnvConfig } from './lib/env-config.mjs';
 import {
   cleanDir,
   ensureDir,
@@ -89,6 +91,14 @@ async function validatePreparedDesktopWorkspace({ desktopWorkspace, platform }) 
     toolchainRoots,
     toolchainValidation
   };
+}
+
+function resolveExecutableRoot(desktopAppRoot, platform) {
+  if (platform.appBundleName) {
+    return path.join(desktopAppRoot, 'Contents', 'MacOS');
+  }
+
+  return desktopAppRoot;
 }
 
 async function listDesktopAssetCandidates({ manifestUrl, version, platformId, selectedAssetName, fetchImpl }) {
@@ -274,6 +284,11 @@ async function main() {
     toolchainValidation,
     desktopArchivePath
   } = preparedDesktop;
+  const envConfig = normalizeSteamEnvConfig(plan.envConfig, { label: 'plan.envConfig' });
+  const executableRoot = resolveExecutableRoot(desktopAppRoot, platform);
+  await ensureDir(executableRoot);
+  const envFilePath = path.join(executableRoot, 'hagicode.env');
+  await writeFile(envFilePath, `${serializeEnvConfig(envConfig, { label: 'plan.envConfig' })}\n`, 'utf8');
 
   const workspaceManifest = {
     planPath,
@@ -296,6 +311,8 @@ async function main() {
     desktopAssetFallbackUsed: selectedDesktopAsset.name !== desktopAsset.name,
     attemptedDesktopAssets: attemptedAssets,
     bundle: platform.bundle ?? null,
+    envConfig,
+    envFilePath,
     toolchainRoot: toolchainRoots.toolchainRoot,
     toolchainBinRoot: toolchainRoots.toolchainBinRoot,
     toolchainManifestPath: toolchainRoots.toolchainManifestPath,
@@ -314,6 +331,7 @@ async function main() {
     `- Desktop asset platform: ${desktopAssetPlatform}`,
     `- Download source: ${sanitizeUrlForLogs(selectedAssetSource)}`,
     `- Workspace: ${workspacePath}`,
+    `- hagicode.env: ${envFilePath}`,
     `- Portable root: ${portableFixedRoot}`,
     `- Toolchain root: ${toolchainRoots.toolchainRoot}`
   ]);

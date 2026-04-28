@@ -30,7 +30,7 @@ The plan must contain:
 - `build.shouldBuild`
 - `build.forceRebuild`
 - `build.dryRun`
-- `envConfig` (optional; defaults to `{ "HAGICODE_MODE": "steam" }`)
+- `envConfig` (optional; defaults to `{ "HAGICODE_MODE": "steam", "HAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED": "true" }`)
 - `handoff.schema = steam-packer-handoff/v1`
 
 `steam_packer` validates the release plan before any workspace mutation. Missing fields fail fast at the `build-plan-validation` stage.
@@ -40,6 +40,7 @@ The plan must contain:
 - Only uppercase `HAGICODE_*` keys are accepted.
 - Every value must be a single-line string without NUL bytes.
 - `HAGICODE_MODE` is always normalized to `steam`.
+- `HAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED` is always present, defaults to `true`, and must be `true` or `false` when provided.
 - `prepare-packaging-workspace.mjs` writes the normalized config to `hagicode.env` beside the packaged executable and records both `envConfig` and `envFilePath` in `workspace-manifest.json`.
 
 ## Workflow Entry
@@ -114,6 +115,7 @@ The generated plan carries:
 {
   "envConfig": {
     "HAGICODE_MODE": "steam",
+    "HAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED": "true",
     "HAGICODE_LOG_LEVEL": "info"
   }
 }
@@ -123,6 +125,7 @@ and the prepared workspace emits:
 
 ```dotenv
 HAGICODE_MODE=steam
+HAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED=true
 HAGICODE_LOG_LEVEL=info
 ```
 

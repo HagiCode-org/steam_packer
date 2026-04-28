@@ -32,7 +32,7 @@ This validates packaging without Azure writes and confirms that the merged metad
 
 For GitHub Actions, maintainers can run `package-release` with `workflow_dispatch` and `dry_run=true` to exercise the same latest-version resolution and packaging path without publishing to the Azure Steam container.
 
-If the Steam package needs additional runtime flags, set `env_config` on `workflow_dispatch` to a JSON object such as `{"HAGICODE_LOG_LEVEL":"info"}`. The workflow and the local resolver use the same normalization contract, so the resulting plan always carries `HAGICODE_MODE=steam`.
+If the Steam package needs additional runtime flags, set `env_config` on `workflow_dispatch` to a JSON object such as `{"HAGICODE_LOG_LEVEL":"info"}`. The workflow and the local resolver use the same normalization contract, so the resulting plan always carries `HAGICODE_MODE=steam` and `HAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED=true` unless the package explicitly sets the achievement-sync value to `false`.
 
 ### Force rebuild
 

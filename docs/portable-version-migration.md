@@ -32,11 +32,24 @@ This validates packaging without Azure writes and confirms that the merged metad
 
 For GitHub Actions, maintainers can run `package-release` with `workflow_dispatch` and `dry_run=true` to exercise the same latest-version resolution and packaging path without publishing to the Azure Steam container.
 
+If the Steam package needs additional runtime flags, set `env_config` on `workflow_dispatch` to a JSON object such as `{"HAGICODE_LOG_LEVEL":"info"}`. The workflow and the local resolver use the same normalization contract, so the resulting plan always carries `HAGICODE_MODE=steam`.
+
 ### Force rebuild
 
 Regenerate the handoff payload with `repos/portable-version/scripts/resolve-build-plan.mjs`, set `force_rebuild=true` in that input, and pass the plan to `steam_packer`. The rebuild intent stays in the handoff payload and `steam_packer` executes the same release tag again while preserving root-index upsert semantics.
 
 For the repository-local manual path, use `workflow_dispatch` with `force_rebuild=true`. This keeps the scheduled-run default skip gate unchanged while allowing a maintainer to rebuild a release that already exists.
+
+The same repository-local path also accepts `env_config`, and the equivalent CLI entrypoint is:
+
+```bash
+node scripts/resolve-dispatch-build-plan.mjs \
+  --event-name workflow_dispatch \
+  --desktop-azure-sas-url "<desktop-sas>" \
+  --service-azure-sas-url "<service-sas>" \
+  --env-config '{"HAGICODE_LOG_LEVEL":"info"}' \
+  --output build/build-plan.json
+```
 
 ### Platform matrix
 
@@ -70,6 +83,8 @@ Current Desktop builds bundle the Node/npm runtime and defer managed CLI package
 Desktop also owns the consumer default-enable matrix in `defaultEnabledByConsumer`. Current Desktop-authored manifests set `desktop=true` and `steam-packer=true`. `steam_packer` treats `defaultEnabledByConsumer['steam-packer'] = true` as the supported explicit contract and rejects explicit `false`; manifests that predate the field are accepted with an enabled legacy fallback so older Desktop artifacts can still be repacked.
 
 Workspace preparation persists the effective decision in `workspace-manifest.json` as `toolchainActivationPolicy`, `bundledToolchainEnabled`, and the selected toolchain root. Later verification and packaging stages consume that metadata and the Desktop-authored `extra/toolchain`; they must not create another Node staging area or run a second package installation path.
+
+Workspace preparation now also writes `hagicode.env` beside the packaged executable, records `envFilePath` plus the normalized `envConfig` in `workspace-manifest.json`, and packaging fails if that file is missing from the final archive.
 
 The reusable `package-release` workflow now consumes the shared Steam dataset from `https://index.hagicode.com/steam/index.json` directly during publication. Local and standalone runs use the same online source by default, while `--steam-data-path` remains available when a maintainer needs to pin a local JSON fixture or a different explicit URL.
 

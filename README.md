@@ -30,9 +30,17 @@ The plan must contain:
 - `build.shouldBuild`
 - `build.forceRebuild`
 - `build.dryRun`
+- `envConfig` (optional; defaults to `{ "HAGICODE_MODE": "steam" }`)
 - `handoff.schema = steam-packer-handoff/v1`
 
 `steam_packer` validates the release plan before any workspace mutation. Missing fields fail fast at the `build-plan-validation` stage.
+
+`envConfig` rules:
+
+- Only uppercase `HAGICODE_*` keys are accepted.
+- Every value must be a single-line string without NUL bytes.
+- `HAGICODE_MODE` is always normalized to `steam`.
+- `prepare-packaging-workspace.mjs` writes the normalized config to `hagicode.env` beside the packaged executable and records both `envConfig` and `envFilePath` in `workspace-manifest.json`.
 
 ## Workflow Entry
 
@@ -60,9 +68,10 @@ Manual trigger behavior:
 - `workflow_dispatch` is supported for maintainers.
 - Manual dispatch auto-resolves the latest Desktop index release and the latest Service index release.
 - Manual dispatch defaults to the three supported publication targets: `linux-x64`, `win-x64`, and `osx-universal`.
-- Manual dispatch only exposes `force_rebuild` and `dry_run`; it does not require a build-plan parameter.
+- Manual dispatch exposes `force_rebuild`, `dry_run`, and an optional `env_config` JSON string; it does not require a build-plan parameter.
 - Set `force_rebuild=true` to package and publish even when the derived Portable Version release already exists.
 - Set `dry_run=true` to run packaging and emit release metadata without writing to the Azure Steam container.
+- Set `env_config` to a JSON object such as `{"HAGICODE_LOG_LEVEL":"info","HAGICODE_DEBUG":"false"}` when a Steam package needs additional runtime flags. Unsupported keys fail validation before workspace preparation.
 - Manual runs still require the same Azure SAS secrets as reusable runs.
 
 ## Local Verification
@@ -86,6 +95,35 @@ node scripts/run-release-plan.mjs \
   --desktop-asset-source /path/to/desktop.zip \
   --service-asset-source /path/to/service.zip \
   --force-dry-run
+```
+
+For non-interactive plan generation from the `steam_packer` repository itself:
+
+```bash
+node scripts/resolve-dispatch-build-plan.mjs \
+  --event-name workflow_dispatch \
+  --desktop-azure-sas-url "<desktop-sas>" \
+  --service-azure-sas-url "<service-sas>" \
+  --env-config '{"HAGICODE_LOG_LEVEL":"info"}' \
+  --output build/build-plan.json
+```
+
+The generated plan carries:
+
+```json
+{
+  "envConfig": {
+    "HAGICODE_MODE": "steam",
+    "HAGICODE_LOG_LEVEL": "info"
+  }
+}
+```
+
+and the prepared workspace emits:
+
+```dotenv
+HAGICODE_MODE=steam
+HAGICODE_LOG_LEVEL=info
 ```
 
 `steam_packer` does not download Node, install OpenSpec, or assemble the portable toolchain. The Desktop asset is the owner of `extra/toolchain`; this repository only verifies the Desktop-authored `toolchain-manifest.json` contract and packages the validated input.

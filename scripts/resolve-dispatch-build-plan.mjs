@@ -29,6 +29,8 @@ export async function resolveDispatchBuildPlan({
   desktopAzureSasUrl,
   serviceAzureSasUrl,
   steamAzureSasUrl,
+  envConfigInput,
+  findPortableRelease,
   fetchImpl
 } = {}) {
   if (!desktopAzureSasUrl || !serviceAzureSasUrl) {
@@ -48,10 +50,19 @@ export async function resolveDispatchBuildPlan({
 
   const resolvedOutputPath = path.resolve(outputPath ?? 'build/build-plan.json');
   await ensureDir(path.dirname(resolvedOutputPath));
+  const resolvedEventPayload = envConfigInput
+    ? {
+        ...eventPayload,
+        inputs: {
+          ...(eventPayload?.inputs ?? {}),
+          env_config: envConfigInput
+        }
+      }
+    : eventPayload;
 
   const plan = await buildPlan({
     eventName,
-    eventPayload,
+    eventPayload: resolvedEventPayload,
     token,
     repositories: normalizedRepositories,
     producerRepository: process.env.GITHUB_REPOSITORY ?? 'HagiCode-org/steam_packer',
@@ -61,6 +72,7 @@ export async function resolveDispatchBuildPlan({
       service: serviceAzureSasUrl
     },
     portableAzureSasUrl: steamAzureSasUrl,
+    findPortableRelease,
     fetchImpl
   });
 
@@ -88,6 +100,7 @@ export async function resolveDispatchBuildPlan({
     `- Steam Azure SAS: ${steamAzureSasUrl ? sanitizeUrlForLogs(steamAzureSasUrl) : '[not-configured]'}`,
     `- Release exists in Azure index: ${plan.release.exists ? 'yes' : 'no'}`,
     `- Build mode: ${plan.build.dryRun ? 'dry-run' : 'publish'}`,
+    `- envConfig: ${JSON.stringify(plan.envConfig)}`,
     `- should_build: ${plan.build.shouldBuild ? 'true' : 'false'}`,
     `- Skip reason: ${plan.build.skipReason ?? '[none]'}`,
     plan.build.shouldBuild ? '- Packaging will continue.' : '- Packaging skipped before package/publish jobs.'
@@ -111,7 +124,8 @@ export async function main() {
       'service-index-url': { type: 'string' },
       'desktop-azure-sas-url': { type: 'string' },
       'service-azure-sas-url': { type: 'string' },
-      'steam-azure-sas-url': { type: 'string' }
+      'steam-azure-sas-url': { type: 'string' },
+      'env-config': { type: 'string' }
     }
   });
 
@@ -168,7 +182,11 @@ export async function main() {
     repositories,
     desktopAzureSasUrl,
     serviceAzureSasUrl,
-    steamAzureSasUrl
+    steamAzureSasUrl,
+    envConfigInput:
+      values['env-config'] ??
+      process.env.STEAM_PACKER_ENV_CONFIG ??
+      process.env.ENV_CONFIG
   });
 
   console.log(
@@ -176,7 +194,8 @@ export async function main() {
       {
         outputPath: result.outputPath,
         releaseTag: result.plan.release.tag,
-        shouldBuild: result.plan.build.shouldBuild
+        shouldBuild: result.plan.build.shouldBuild,
+        envConfig: result.plan.envConfig
       },
       null,
       2

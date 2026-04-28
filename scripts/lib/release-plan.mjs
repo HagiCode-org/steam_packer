@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { normalizeSteamEnvConfig } from './env-config.mjs';
 import { readJson } from './fs-utils.mjs';
 import { createPlatformMatrix, getRequestedAssetPlatforms, getPlatformConfig } from './platforms.mjs';
 
@@ -72,6 +73,7 @@ function validateUpstreamAssets(plan, platformId, sourceType) {
 
 export function validateReleasePlan(plan, { planPath = '[inline]' } = {}) {
   requireObject(plan, 'handoff plan');
+  const envConfig = normalizeSteamEnvConfig(plan.envConfig, { label: 'handoff.envConfig' });
 
   const handoff = requireObject(plan.handoff, 'handoff');
   if (handoff.schema !== STEAM_PACKER_HANDOFF_SCHEMA) {
@@ -114,16 +116,21 @@ export function validateReleasePlan(plan, { planPath = '[inline]' } = {}) {
   const platformMatrix = plan.platformMatrix?.include?.length
     ? plan.platformMatrix
     : createPlatformMatrix(platforms);
+  const normalizedPlan = {
+    ...plan,
+    envConfig,
+    platformMatrix
+  };
 
   return {
-    plan,
+    plan: normalizedPlan,
     planPath,
     releaseTag,
     dryRun: build.dryRun,
     shouldBuild: build.shouldBuild,
     forceRebuild: build.forceRebuild,
     platforms,
-    platformMatrix,
+    platformMatrix: normalizedPlan.platformMatrix,
     publication
   };
 }

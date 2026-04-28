@@ -3,6 +3,7 @@ import {
   getAzureBlobContainerUrl,
   sanitizeUrlForLogs
 } from './azure-blob.mjs';
+import { normalizeSteamEnvConfig, parseEnvConfigInput } from './env-config.mjs';
 import { findReleaseByTag } from './github.mjs';
 import { DEFAULT_INDEX_SOURCES, resolveIndexRelease } from './index-source.mjs';
 import { STEAM_PACKER_HANDOFF_SCHEMA } from './release-plan.mjs';
@@ -56,6 +57,11 @@ export function normalizeTriggerInputs({ eventName, eventPayload, defaultPlatfor
     false
   );
   const dryRun = normalizeBoolean(coalesce(inputs.dry_run, dispatchPayload.dryRun, dispatchPayload.dry_run), false);
+  const rawEnvConfig = coalesce(inputs.env_config, dispatchPayload.envConfig, dispatchPayload.env_config);
+  const envConfig = normalizeSteamEnvConfig(
+    parseEnvConfigInput(rawEnvConfig, { label: 'trigger.env_config' }),
+    { label: 'trigger.env_config' }
+  );
 
   return {
     triggerType: eventName,
@@ -64,12 +70,14 @@ export function normalizeTriggerInputs({ eventName, eventPayload, defaultPlatfor
     selectedPlatforms: normalizePlatforms(platforms, defaultPlatforms),
     forceRebuild,
     dryRun,
+    envConfig,
     rawInputs: {
       desktop_tag: desktopSelector ?? null,
       service_tag: serviceSelector ?? null,
       platforms: platforms ?? null,
       force_rebuild: forceRebuild,
-      dry_run: dryRun
+      dry_run: dryRun,
+      env_config: rawEnvConfig ?? null
     }
   };
 }
@@ -165,6 +173,7 @@ export async function buildPlan({
       dryRun: trigger.dryRun,
       skipReason
     },
+    envConfig: trigger.envConfig,
     handoff: {
       schema: STEAM_PACKER_HANDOFF_SCHEMA,
       producer: {

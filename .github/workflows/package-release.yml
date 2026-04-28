@@ -34,6 +34,11 @@ on:
         required: false
         default: false
         type: boolean
+      env_config:
+        description: 'Optional JSON object of additional HAGICODE_* keys to write into hagicode.env. HAGICODE_MODE is always normalized to steam.'
+        required: false
+        default: '{}'
+        type: string
 
 permissions:
   contents: read
@@ -84,6 +89,7 @@ jobs:
           node scripts/resolve-dispatch-build-plan.mjs \
             --event-name "$GITHUB_EVENT_NAME" \
             --event-path "$GITHUB_EVENT_PATH" \
+            --env-config '${{ inputs.env_config }}' \
             --output "$RUNNER_TEMP/build-plan/build-plan.json"
 
       - name: Validate release plan

@@ -1,8 +1,11 @@
 export const HAGICODE_ENV_KEY_PATTERN = /^HAGICODE_[A-Z0-9_]+$/;
 export const STEAM_MODE_ENV_KEY = 'HAGICODE_MODE';
 export const STEAM_MODE_ENV_VALUE = 'steam';
+export const STEAM_ACHIEVEMENT_SYNC_ENV_KEY = 'HAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED';
+export const DEFAULT_STEAM_ACHIEVEMENT_SYNC_ENV_VALUE = 'true';
 export const DEFAULT_STEAM_ENV_CONFIG = Object.freeze({
-  [STEAM_MODE_ENV_KEY]: STEAM_MODE_ENV_VALUE
+  [STEAM_MODE_ENV_KEY]: STEAM_MODE_ENV_VALUE,
+  [STEAM_ACHIEVEMENT_SYNC_ENV_KEY]: DEFAULT_STEAM_ACHIEVEMENT_SYNC_ENV_VALUE
 });
 
 function isPlainObject(value) {
@@ -69,6 +72,16 @@ export function normalizeSteamEnvConfig(input, { label = 'envConfig' } = {}) {
 
   for (const [key, value] of Object.entries(validated)) {
     if (key === STEAM_MODE_ENV_KEY) {
+      continue;
+    }
+
+    if (key === STEAM_ACHIEVEMENT_SYNC_ENV_KEY) {
+      const normalizedValue = value.trim().toLowerCase();
+      if (normalizedValue !== 'true' && normalizedValue !== 'false') {
+        throw new Error(`${label}.${key} must be either "true" or "false".`);
+      }
+
+      normalized[key] = normalizedValue;
       continue;
     }
 

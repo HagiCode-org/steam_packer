@@ -169,6 +169,25 @@ test('delegated handoff fails during build-plan validation before packaging star
   );
 });
 
+test('delegated handoff rejects invalid envConfig before workspace preparation starts', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-handoff-invalid-env-'));
+  const fixture = await createPlanFixture(tempRoot);
+  const plan = await readJson(fixture.planPath);
+  plan.envConfig = {
+    PATH: '/usr/bin'
+  };
+  await writeJson(fixture.planPath, plan);
+
+  await assert.rejects(
+    () =>
+      executeReleasePlan({
+        planPath: fixture.planPath,
+        runRoot: path.join(tempRoot, 'run')
+      }),
+    (error) => error.stage === 'build-plan-validation' && /envConfig/i.test(error.message)
+  );
+});
+
 test('delegated handoff surfaces packaging-stage failures separately from plan validation', async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-handoff-packaging-'));
   const fixture = await createPlanFixture(tempRoot);

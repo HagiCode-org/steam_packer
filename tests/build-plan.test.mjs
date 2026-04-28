@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtemp } from 'node:fs/promises';
 import { buildPlan } from '../scripts/lib/build-plan.mjs';
+import { readJson } from '../scripts/lib/fs-utils.mjs';
+import { resolveDispatchBuildPlan } from '../scripts/resolve-dispatch-build-plan.mjs';
 
 const DESKTOP_INDEX_URL = 'https://index.hagicode.com/desktop/index.json';
 const SERVICE_INDEX_URL = 'https://index.hagicode.com/server/index.json';
@@ -87,6 +92,9 @@ test('buildPlan selects latest desktop and service releases for the default thre
   assert.equal(plan.build.shouldBuild, true);
   assert.equal(plan.build.forceRebuild, false);
   assert.equal(plan.build.dryRun, false);
+  assert.deepEqual(plan.envConfig, {
+    HAGICODE_MODE: 'steam'
+  });
   assert.equal(plan.downloads.desktop.containerUrl, 'https://example.blob.core.windows.net/desktop/');
   assert.equal(plan.downloads.service.containerUrl, 'https://example.blob.core.windows.net/server/');
   assert.equal(plan.upstream.desktop.assetsByPlatform['linux-x64'].name, 'hagicode-desktop-0.3.0.zip');
@@ -161,7 +169,75 @@ test('buildPlan respects dry_run and force_rebuild when the Azure release alread
   assert.equal(plan.build.shouldBuild, true);
   assert.equal(plan.build.forceRebuild, true);
   assert.equal(plan.build.dryRun, true);
+  assert.deepEqual(plan.envConfig, {
+    HAGICODE_MODE: 'steam'
+  });
   assert.equal(plan.build.skipReason, null);
+});
+
+test('buildPlan normalizes additional HAGICODE env config from workflow inputs', async () => {
+  const plan = await buildPlan({
+    eventName: 'workflow_dispatch',
+    eventPayload: {
+      inputs: {
+        env_config: JSON.stringify({
+          HAGICODE_LOG_LEVEL: 'debug',
+          HAGICODE_DEBUG: 'true',
+          HAGICODE_MODE: 'desktop'
+        })
+      }
+    },
+    repositories: {
+      desktop: DESKTOP_INDEX_URL,
+      service: SERVICE_INDEX_URL,
+      portable: 'HagiCode-org/steam_packer'
+    },
+    azureSasUrls: {
+      desktop: 'https://example.blob.core.windows.net/desktop?sp=racwl&sig=test-token',
+      service: 'https://example.blob.core.windows.net/server?sp=racwl&sig=test-token'
+    },
+    findPortableRelease: async () => null,
+    fetchImpl: createFetchStub(),
+    now: '2026-04-21T00:00:00.000Z'
+  });
+
+  assert.deepEqual(plan.envConfig, {
+    HAGICODE_MODE: 'steam',
+    HAGICODE_LOG_LEVEL: 'debug',
+    HAGICODE_DEBUG: 'true'
+  });
+  assert.equal(plan.trigger.rawInputs.env_config, '{"HAGICODE_LOG_LEVEL":"debug","HAGICODE_DEBUG":"true","HAGICODE_MODE":"desktop"}');
+});
+
+test('resolveDispatchBuildPlan applies the same envConfig normalization for local CLI overrides', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-build-plan-'));
+  const outputPath = path.join(tempRoot, 'build-plan.json');
+
+  const result = await resolveDispatchBuildPlan({
+    eventName: 'workflow_dispatch',
+    eventPayload: { inputs: {} },
+    outputPath,
+    repositories: {
+      desktop: DESKTOP_INDEX_URL,
+      service: SERVICE_INDEX_URL,
+      portable: 'HagiCode-org/steam_packer'
+    },
+    desktopAzureSasUrl: 'https://example.blob.core.windows.net/desktop?sp=racwl&sig=test-token',
+    serviceAzureSasUrl: 'https://example.blob.core.windows.net/server?sp=racwl&sig=test-token',
+    envConfigInput: JSON.stringify({
+      HAGICODE_LOG_LEVEL: 'info',
+      HAGICODE_MODE: 'ignored'
+    }),
+    fetchImpl: createFetchStub(),
+    findPortableRelease: async () => null
+  });
+
+  const writtenPlan = await readJson(outputPath);
+  assert.deepEqual(result.plan.envConfig, {
+    HAGICODE_MODE: 'steam',
+    HAGICODE_LOG_LEVEL: 'info'
+  });
+  assert.deepEqual(writtenPlan.envConfig, result.plan.envConfig);
 });
 
 test('buildPlan skips packaging when the latest Azure release already exists and force_rebuild is disabled', async () => {

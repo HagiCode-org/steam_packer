@@ -10,8 +10,25 @@ export const DEFAULT_INDEX_SOURCES = {
   service: 'https://index.hagicode.com/server/index.json'
 };
 
+export const DEFAULT_INDEX_MANIFEST_PATH = 'index.json';
+
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function sanitizeSourceUrlForLogs(url) {
+  if (!url) {
+    return '[empty-url]';
+  }
+
+  try {
+    const parsed = new URL(url);
+    return parsed.search ? `${parsed.origin}${parsed.pathname}?<sas-token-redacted>` : url;
+  } catch {
+    const normalized = String(url);
+    const queryIndex = normalized.indexOf('?');
+    return queryIndex >= 0 ? `${normalized.slice(0, queryIndex)}?<sas-token-redacted>` : normalized;
+  }
 }
 
 function getFetch(fetchImpl = globalThis.fetch) {
@@ -252,13 +269,24 @@ export async function fetchIndexManifest(indexUrl, { fetchImpl } = {}) {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Failed to read index manifest ${indexUrl}: ${response.status} ${body}`);
+    throw new Error(
+      `Failed to read index manifest ${sanitizeSourceUrlForLogs(indexUrl)}: ${response.status} ${body}`
+    );
   }
 
   return response.json();
 }
 
-export async function resolveIndexRelease({ sourceType, indexUrl, selector, platforms, fetchImpl }) {
+export async function resolveIndexRelease({
+  sourceType,
+  indexUrl,
+  manifestUrl = indexUrl,
+  selector,
+  platforms,
+  fetchImpl,
+  sourceAuthority = 'index-site',
+  manifestPath = null
+}) {
   const manifest = await fetchIndexManifest(indexUrl, { fetchImpl });
   const versionEntry = resolveVersionEntry({
     manifest,
@@ -268,7 +296,9 @@ export async function resolveIndexRelease({ sourceType, indexUrl, selector, plat
 
   return {
     sourceType: 'index',
-    manifestUrl: indexUrl,
+    sourceAuthority,
+    manifestUrl,
+    manifestPath,
     selector: normalizeVersionSelector(selector)?.normalized ?? null,
     version: versionEntry.version,
     updatedAt: manifest.updatedAt ?? null,

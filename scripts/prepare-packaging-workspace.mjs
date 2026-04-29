@@ -2,7 +2,12 @@
 import path from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
-import { downloadFromSource, resolveAssetDownloadUrl, sanitizeUrlForLogs } from './lib/azure-blob.mjs';
+import {
+  buildSignedBlobUrl,
+  downloadFromSource,
+  resolveAssetDownloadUrl,
+  sanitizeUrlForLogs
+} from './lib/azure-blob.mjs';
 import { extractArchive } from './lib/archive.mjs';
 import { normalizeSteamEnvConfig, serializeEnvConfig } from './lib/env-config.mjs';
 import {
@@ -117,6 +122,14 @@ async function listDesktopAssetCandidates({ manifestUrl, version, platformId, se
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
+function resolveManifestRequestUrl({ upstreamSource, azureSasUrl }) {
+  if (upstreamSource?.sourceAuthority === 'azure-blob' && upstreamSource?.manifestPath && azureSasUrl) {
+    return buildSignedBlobUrl(azureSasUrl, upstreamSource.manifestPath);
+  }
+
+  return upstreamSource?.manifestUrl;
+}
+
 async function attemptDesktopAsset({
   asset,
   sourceUrl,
@@ -224,7 +237,10 @@ async function main() {
     }
 
     const fallbackAssets = await listDesktopAssetCandidates({
-      manifestUrl: plan.upstream.desktop.manifestUrl,
+      manifestUrl: resolveManifestRequestUrl({
+        upstreamSource: plan.upstream.desktop,
+        azureSasUrl
+      }),
       version: plan.upstream.desktop.version,
       platformId: platform.id,
       selectedAssetName: selectedDesktopAsset.name

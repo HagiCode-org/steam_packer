@@ -1,11 +1,16 @@
 import {
+  buildSignedBlobUrl,
   findPortableVersionReleaseByTag,
   getAzureBlobContainerUrl,
   sanitizeUrlForLogs
 } from './azure-blob.mjs';
 import { normalizeSteamEnvConfig, parseEnvConfigInput } from './env-config.mjs';
 import { findReleaseByTag } from './github.mjs';
-import { DEFAULT_INDEX_SOURCES, resolveIndexRelease } from './index-source.mjs';
+import {
+  DEFAULT_INDEX_MANIFEST_PATH,
+  DEFAULT_INDEX_SOURCES,
+  resolveIndexRelease
+} from './index-source.mjs';
 import { STEAM_PACKER_HANDOFF_SCHEMA } from './release-plan.mjs';
 import {
   DEFAULT_PLATFORMS,
@@ -15,8 +20,6 @@ import {
 } from './platforms.mjs';
 
 const DEFAULT_REPOSITORIES = {
-  desktop: DEFAULT_INDEX_SOURCES.desktop,
-  service: DEFAULT_INDEX_SOURCES.service,
   portable: 'HagiCode-org/steam_packer'
 };
 
@@ -43,6 +46,35 @@ function normalizeBoolean(value, defaultValue = false) {
 
 function coalesce(...values) {
   return values.find((value) => value !== undefined && value !== null && String(value).trim() !== '');
+}
+
+function resolveIndexRepository({ sourceType, explicitUrl, azureSasUrl }) {
+  if (explicitUrl) {
+    return {
+      requestUrl: explicitUrl,
+      manifestUrl: sanitizeUrlForLogs(explicitUrl),
+      sourceAuthority: 'explicit-override',
+      manifestPath: null
+    };
+  }
+
+  if (azureSasUrl) {
+    const requestUrl = buildSignedBlobUrl(azureSasUrl, DEFAULT_INDEX_MANIFEST_PATH);
+    return {
+      requestUrl,
+      manifestUrl: sanitizeUrlForLogs(requestUrl),
+      sourceAuthority: 'azure-blob',
+      manifestPath: DEFAULT_INDEX_MANIFEST_PATH
+    };
+  }
+
+  const fallbackUrl = DEFAULT_INDEX_SOURCES[sourceType];
+  return {
+    requestUrl: fallbackUrl,
+    manifestUrl: fallbackUrl,
+    sourceAuthority: 'index-site-legacy-default',
+    manifestPath: null
+  };
 }
 
 export function normalizeTriggerInputs({ eventName, eventPayload, defaultPlatforms = DEFAULT_PLATFORMS }) {
@@ -101,17 +133,35 @@ export async function buildPlan({
     defaultPlatforms
   });
 
+  const portableRepository = repositories?.portable ?? DEFAULT_REPOSITORIES.portable;
+  const desktopRepository = resolveIndexRepository({
+    sourceType: 'desktop',
+    explicitUrl: repositories?.desktop,
+    azureSasUrl: azureSasUrls?.desktop
+  });
+  const serviceRepository = resolveIndexRepository({
+    sourceType: 'service',
+    explicitUrl: repositories?.service,
+    azureSasUrl: azureSasUrls?.service
+  });
+
   const [desktopRelease, serviceRelease] = await Promise.all([
     resolveIndexRelease({
       sourceType: 'desktop',
-      indexUrl: repositories.desktop,
+      indexUrl: desktopRepository.requestUrl,
+      manifestUrl: desktopRepository.manifestUrl,
+      sourceAuthority: desktopRepository.sourceAuthority,
+      manifestPath: desktopRepository.manifestPath,
       selector: trigger.desktopSelector,
       platforms: trigger.selectedPlatforms,
       fetchImpl
     }),
     resolveIndexRelease({
       sourceType: 'service',
-      indexUrl: repositories.service,
+      indexUrl: serviceRepository.requestUrl,
+      manifestUrl: serviceRepository.manifestUrl,
+      sourceAuthority: serviceRepository.sourceAuthority,
+      manifestPath: serviceRepository.manifestPath,
       selector: trigger.serviceSelector,
       platforms: trigger.selectedPlatforms,
       fetchImpl
@@ -125,7 +175,7 @@ export async function buildPlan({
         releaseTag,
         fetchImpl
       })
-    : await findPortableRelease(repositories.portable, releaseTag, token);
+    : await findPortableRelease(portableRepository, releaseTag, token);
   const releaseExists = Boolean(existingPortableRelease);
   const shouldBuild = !releaseExists || trigger.forceRebuild;
   const skipReason = !shouldBuild
@@ -147,7 +197,11 @@ export async function buildPlan({
   return {
     schemaVersion: 2,
     generatedAt: now,
-    repositories,
+    repositories: {
+      desktop: desktopRepository.manifestUrl,
+      service: serviceRepository.manifestUrl,
+      portable: portableRepository
+    },
     trigger: {
       type: trigger.triggerType,
       rawInputs: trigger.rawInputs
@@ -160,7 +214,7 @@ export async function buildPlan({
       service: serviceRelease
     },
     release: {
-      repository: repositories.portable,
+      repository: portableRepository,
       tag: releaseTag,
       name: `Portable Version ${releaseTag}`,
       exists: releaseExists,
@@ -181,7 +235,7 @@ export async function buildPlan({
         workflow: 'package-release'
       },
       consumer: {
-        repository: repositories.portable,
+        repository: portableRepository,
         workflow: 'package-release'
       },
       publication: {

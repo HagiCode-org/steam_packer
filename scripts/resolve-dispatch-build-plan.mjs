@@ -6,7 +6,6 @@ import { parseArgs } from 'node:util';
 import { parseAzureSasUrl, sanitizeUrlForLogs } from './lib/azure-blob.mjs';
 import { buildPlan } from './lib/build-plan.mjs';
 import { ensureDir, readJson, writeJson } from './lib/fs-utils.mjs';
-import { DEFAULT_INDEX_SOURCES } from './lib/index-source.mjs';
 import { DEFAULT_PLATFORMS } from './lib/platforms.mjs';
 import { appendSummary, annotateError } from './lib/summary.mjs';
 
@@ -43,8 +42,8 @@ export async function resolveDispatchBuildPlan({
   parseAzureSasUrl(serviceAzureSasUrl);
 
   const normalizedRepositories = {
-    desktop: repositories?.desktop ?? DEFAULT_INDEX_SOURCES.desktop,
-    service: repositories?.service ?? DEFAULT_INDEX_SOURCES.service,
+    ...(repositories?.desktop ? { desktop: repositories.desktop } : {}),
+    ...(repositories?.service ? { service: repositories.service } : {}),
     portable: repositories?.portable ?? (process.env.GITHUB_REPOSITORY ?? 'HagiCode-org/steam_packer')
   };
 
@@ -89,9 +88,9 @@ export async function resolveDispatchBuildPlan({
   await appendSummary([
     '## steam_packer automated release plan',
     `- Trigger type: ${plan.trigger.type}`,
-    `- Desktop index: ${plan.upstream.desktop.manifestUrl}`,
+    `- Desktop manifest source: ${plan.upstream.desktop.manifestUrl}`,
     `- Latest Desktop version: ${plan.upstream.desktop.version}`,
-    `- Service index: ${plan.upstream.service.manifestUrl}`,
+    `- Service manifest source: ${plan.upstream.service.manifestUrl}`,
     `- Latest Service version: ${plan.upstream.service.version}`,
     `- Platforms: ${selectedPlatforms}`,
     `- Derived release tag: ${plan.release.tag}`,
@@ -159,16 +158,26 @@ export async function main() {
     ? values['default-platforms'].split(',').map((item) => item.trim()).filter(Boolean)
     : DEFAULT_PLATFORMS;
   const repositories = {
-    desktop:
-      values['desktop-index-url'] ??
-      process.env.DESKTOP_INDEX_URL ??
-      process.env.PORTABLE_VERSION_DESKTOP_INDEX_URL ??
-      DEFAULT_INDEX_SOURCES.desktop,
-    service:
-      values['service-index-url'] ??
-      process.env.SERVICE_INDEX_URL ??
-      process.env.PORTABLE_VERSION_SERVICE_INDEX_URL ??
-      DEFAULT_INDEX_SOURCES.service,
+    ...(values['desktop-index-url'] ??
+    process.env.DESKTOP_INDEX_URL ??
+    process.env.PORTABLE_VERSION_DESKTOP_INDEX_URL
+      ? {
+          desktop:
+            values['desktop-index-url'] ??
+            process.env.DESKTOP_INDEX_URL ??
+            process.env.PORTABLE_VERSION_DESKTOP_INDEX_URL
+        }
+      : {}),
+    ...(values['service-index-url'] ??
+    process.env.SERVICE_INDEX_URL ??
+    process.env.PORTABLE_VERSION_SERVICE_INDEX_URL
+      ? {
+          service:
+            values['service-index-url'] ??
+            process.env.SERVICE_INDEX_URL ??
+            process.env.PORTABLE_VERSION_SERVICE_INDEX_URL
+        }
+      : {}),
     portable: process.env.GITHUB_REPOSITORY ?? 'HagiCode-org/steam_packer'
   };
   const eventPayload = eventPath ? await readJson(eventPath) : {};

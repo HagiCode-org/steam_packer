@@ -14,6 +14,7 @@ const SHARED_STEAM_DEPOT_IDS = {
   windows: '4625541',
   macos: '4625543'
 };
+const GITHUB_RELEASE_REPOSITORY = 'HagiCode-org/steam_packer';
 
 function createSteamDataSet() {
   return {
@@ -70,7 +71,7 @@ function createPlan(releaseTag, { dryRun = false } = {}) {
       service: { manifestUrl: 'https://index.hagicode.com/server/index.json', version: releaseTag.replace(/^v/, '') }
     },
     release: {
-      repository: 'HagiCode-org/steam_packer',
+      repository: GITHUB_RELEASE_REPOSITORY,
       tag: releaseTag,
       name: `Portable Version ${releaseTag}`
     },
@@ -211,9 +212,92 @@ function createAzureFetchStub({
   };
 }
 
+function createGitHubReleaseFetchStub({ repository = GITHUB_RELEASE_REPOSITORY, existingReleases = [] } = {}) {
+  const calls = [];
+  const releasesByTag = new Map(
+    existingReleases.map((release) => [
+      release.tag_name,
+      {
+        draft: false,
+        prerelease: false,
+        assets: [],
+        ...release
+      }
+    ])
+  );
+  let nextReleaseId = Math.max(0, ...existingReleases.map((release) => release.id ?? 0)) + 1;
+
+  return {
+    calls,
+    getRelease(tag) {
+      return releasesByTag.get(tag) ?? null;
+    },
+    async fetchImpl(url, options = {}) {
+      const parsed = new URL(url);
+      if (parsed.origin !== 'https://api.github.com') {
+        throw new Error(`Unexpected GitHub URL: ${url}`);
+      }
+
+      const method = options.method ?? 'GET';
+      const body = options.body ? JSON.parse(options.body) : null;
+      calls.push({ url, method, body });
+
+      const expectedPrefix = `/repos/${repository}/releases`;
+      if (!parsed.pathname.startsWith(expectedPrefix)) {
+        return new Response('not found', { status: 404 });
+      }
+
+      if (method === 'GET' && parsed.pathname.startsWith(`${expectedPrefix}/tags/`)) {
+        const tag = decodeURIComponent(parsed.pathname.slice(`${expectedPrefix}/tags/`.length));
+        const release = releasesByTag.get(tag);
+        return release
+          ? Response.json(release, { status: 200 })
+          : new Response('not found', { status: 404 });
+      }
+
+      if (method === 'POST' && parsed.pathname === expectedPrefix) {
+        const release = {
+          id: nextReleaseId,
+          tag_name: body.tag_name,
+          name: body.name,
+          body: body.body,
+          html_url: `https://github.com/${repository}/releases/tag/${body.tag_name}`,
+          draft: Boolean(body.draft),
+          prerelease: Boolean(body.prerelease),
+          assets: []
+        };
+        nextReleaseId += 1;
+        releasesByTag.set(release.tag_name, release);
+        return Response.json(release, { status: 201 });
+      }
+
+      if (method === 'PATCH' && /^\/repos\/[^/]+\/[^/]+\/releases\/\d+$/.test(parsed.pathname)) {
+        const releaseId = Number.parseInt(parsed.pathname.split('/').pop(), 10);
+        const matchedRelease = [...releasesByTag.values()].find((release) => release.id === releaseId);
+        if (!matchedRelease) {
+          return new Response('not found', { status: 404 });
+        }
+
+        const updatedRelease = {
+          ...matchedRelease,
+          name: body.name ?? matchedRelease.name,
+          body: body.body ?? matchedRelease.body,
+          draft: body.draft ?? matchedRelease.draft,
+          prerelease: body.prerelease ?? matchedRelease.prerelease
+        };
+        releasesByTag.set(updatedRelease.tag_name, updatedRelease);
+        return Response.json(updatedRelease, { status: 200 });
+      }
+
+      return new Response('not found', { status: 404 });
+    }
+  };
+}
+
 test('publish-release emits an Azure dry-run publication report', async () => {
   const fixture = await createPublicationFixture({ dryRun: true });
   const azureCalls = [];
+  const github = createGitHubReleaseFetchStub();
 
   const result = await publishRelease({
     planPath: fixture.planPath,
@@ -222,7 +306,11 @@ test('publish-release emits an Azure dry-run publication report', async () => {
     forceDryRun: true,
     steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
     steamDataPath: fixture.steamDataPath,
+    githubToken: 'test-github-token',
     fetchImpl: async (url, options = {}) => {
+      if (String(url).startsWith('https://api.github.com/')) {
+        return github.fetchImpl(url, options);
+      }
       azureCalls.push({ url, method: options.method ?? 'GET' });
       return new Response('', { status: 500 });
     }
@@ -237,6 +325,8 @@ test('publish-release emits an Azure dry-run publication report', async () => {
   assert.deepEqual(report.steamDepotIds, SHARED_STEAM_DEPOT_IDS);
   assert.equal(report.assetUploads.length, 4);
   assert.deepEqual(azureCalls, []);
+  assert.equal(result.githubRelease, null);
+  assert.deepEqual(github.calls, []);
 });
 
 test('publish-release resolves the shared Steam dataset from the default online source', async () => {
@@ -396,6 +486,7 @@ test('publish-release writes index.json only after release prefix visibility ver
 
 test('publish-release uploads assets to Azure and upserts the root index entry', async () => {
   const fixture = await createPublicationFixture();
+  const github = createGitHubReleaseFetchStub();
   const fetchImpl = createAzureFetchStub({
     existingRootIndex: {
       schemaVersion: 1,
@@ -431,7 +522,13 @@ test('publish-release uploads assets to Azure and upserts the root index entry',
     outputDir: fixture.outputDir,
     steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
     steamDataPath: fixture.steamDataPath,
-    fetchImpl
+    githubToken: 'test-github-token',
+    fetchImpl: async (url, options = {}) => {
+      if (String(url).startsWith('https://api.github.com/')) {
+        return github.fetchImpl(url, options);
+      }
+      return fetchImpl(url, options);
+    }
   });
 
   const publicationResult = await readJson(path.join(fixture.outputDir, 'v0.1.0-beta.33.publish-result.json'));
@@ -444,8 +541,12 @@ test('publish-release uploads assets to Azure and upserts the root index entry',
   assert.equal(publicationResult.metadata.artifactInventoryPath, 'v0.1.0-beta.33/v0.1.0-beta.33.artifact-inventory.json');
   assert.equal(publicationResult.steamAppId, STEAM_APP_ID);
   assert.deepEqual(publicationResult.steamDepotIds, SHARED_STEAM_DEPOT_IDS);
+  assert.equal(result.githubRelease.action, 'created');
+  assert.equal(result.githubRelease.assetCount, 0);
+  assert.equal(publicationResult.githubRelease.action, 'created');
   assert.deepEqual(Object.keys(publicationResult).sort(), [
     'azurePublication',
+    'githubRelease',
     'metadata',
     'releaseTag',
     'steamAppId',
@@ -468,6 +569,78 @@ test('publish-release uploads assets to Azure and upserts the root index entry',
       { version: 'v0.1.0-beta.20', steamAppId: STEAM_APP_ID }
     ]
   );
+  assert.deepEqual(github.calls.map((call) => call.method), ['GET', 'POST']);
+  assert.ok(github.calls.every((call) => !call.url.includes('/assets')));
+  assert.match(github.calls[1].body.body, /Build manifest path: v0\.1\.0-beta\.33\/v0\.1\.0-beta\.33\.build-manifest\.json/);
+});
+
+test('publish-release creates GitHub release notes only after Azure root index refresh succeeds', async () => {
+  const fixture = await createPublicationFixture();
+  const events = [];
+  const github = createGitHubReleaseFetchStub();
+  const azureFetch = createAzureFetchStub({
+    onPutStart: ({ blobPath }) => {
+      if (blobPath === 'index.json') {
+        events.push('put-root-index');
+      }
+    }
+  });
+
+  const result = await publishRelease({
+    planPath: fixture.planPath,
+    artifactsDir: fixture.artifactsDir,
+    outputDir: fixture.outputDir,
+    steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
+    steamDataPath: fixture.steamDataPath,
+    githubToken: 'test-github-token',
+    fetchImpl: async (url, options = {}) => {
+      if (String(url).startsWith('https://api.github.com/')) {
+        events.push(`github-${options.method ?? 'GET'}`);
+        return github.fetchImpl(url, options);
+      }
+      return azureFetch(url, options);
+    }
+  });
+
+  assert.equal(result.githubRelease.action, 'created');
+  assert.deepEqual(events.slice(-3), ['put-root-index', 'github-GET', 'github-POST']);
+});
+
+test('publish-release updates existing GitHub release notes without uploading GitHub assets', async () => {
+  const fixture = await createPublicationFixture();
+  const github = createGitHubReleaseFetchStub({
+    existingReleases: [
+      {
+        id: 42,
+        tag_name: 'v0.1.0-beta.33',
+        name: 'Portable Version v0.1.0-beta.33',
+        body: 'old body',
+        html_url: 'https://github.com/HagiCode-org/steam_packer/releases/tag/v0.1.0-beta.33',
+        assets: []
+      }
+    ]
+  });
+  const azureFetch = createAzureFetchStub();
+
+  const result = await publishRelease({
+    planPath: fixture.planPath,
+    artifactsDir: fixture.artifactsDir,
+    outputDir: fixture.outputDir,
+    steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
+    steamDataPath: fixture.steamDataPath,
+    githubToken: 'test-github-token',
+    fetchImpl: async (url, options = {}) => {
+      if (String(url).startsWith('https://api.github.com/')) {
+        return github.fetchImpl(url, options);
+      }
+      return azureFetch(url, options);
+    }
+  });
+
+  assert.equal(result.githubRelease.action, 'updated');
+  assert.deepEqual(github.calls.map((call) => call.method), ['GET', 'PATCH']);
+  assert.ok(github.calls.every((call) => !call.url.includes('/assets')));
+  assert.match(github.calls[1].body.body, /Azure version directory: v0\.1\.0-beta\.33\//);
 });
 
 test('publish-release retries transient Azure upload timeouts and completes publication', async () => {
@@ -635,6 +808,7 @@ test('publish-release fails when the existing root index belongs to a different 
 test('publish-release fails when Azure upload does not remain addressable', async () => {
   const fixture = await createPublicationFixture();
   const rootIndexWrites = [];
+  const github = createGitHubReleaseFetchStub();
   const baseFetch = createAzureFetchStub({
     failBlobPath: 'v0.1.0-beta.33/hagicode-portable-linux-x64.zip'
   });
@@ -647,7 +821,11 @@ test('publish-release fails when Azure upload does not remain addressable', asyn
         outputDir: fixture.outputDir,
         steamAzureSasUrl: 'https://example.blob.core.windows.net/hagicode-steam?sp=racwl&sig=test-token',
         steamDataPath: fixture.steamDataPath,
+        githubToken: 'test-github-token',
         fetchImpl: async (url, options = {}) => {
+          if (String(url).startsWith('https://api.github.com/')) {
+            return github.fetchImpl(url, options);
+          }
           const blobPath = azureBlobPathFromUrl(url);
           if ((options.method ?? 'GET') === 'PUT' && blobPath === 'index.json') {
             rootIndexWrites.push(blobPath);
@@ -658,6 +836,7 @@ test('publish-release fails when Azure upload does not remain addressable', asyn
     /Failed to upload Azure blob/
   );
   assert.deepEqual(rootIndexWrites, []);
+  assert.deepEqual(github.calls, []);
 });
 
 test('publish-release fails before root index update when uploaded blob is not visible in prefix listing', async () => {

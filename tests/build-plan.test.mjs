@@ -9,10 +9,16 @@ import { resolveDispatchBuildPlan } from '../scripts/resolve-dispatch-build-plan
 
 const DESKTOP_INDEX_URL = 'https://index.hagicode.com/desktop/index.json';
 const SERVICE_INDEX_URL = 'https://index.hagicode.com/server/index.json';
+const DESKTOP_AZURE_SAS_URL = 'https://example.blob.core.windows.net/desktop?sp=racwl&sig=test-token';
+const SERVICE_AZURE_SAS_URL = 'https://example.blob.core.windows.net/server?sp=racwl&sig=test-token';
+const DESKTOP_AZURE_MANIFEST_URL = 'https://example.blob.core.windows.net/desktop/index.json?sp=racwl&sig=test-token';
+const SERVICE_AZURE_MANIFEST_URL = 'https://example.blob.core.windows.net/server/index.json?sp=racwl&sig=test-token';
 
-function createFetchStub() {
+function createFetchStub({ requests = [] } = {}) {
   return async (url) => {
-    if (url === DESKTOP_INDEX_URL) {
+    requests.push(url);
+
+    if (url === DESKTOP_INDEX_URL || url === DESKTOP_AZURE_MANIFEST_URL) {
       return Response.json({
         updatedAt: '2026-04-21T00:00:00.000Z',
         versions: [
@@ -37,7 +43,7 @@ function createFetchStub() {
       });
     }
 
-    if (url === SERVICE_INDEX_URL) {
+    if (url === SERVICE_INDEX_URL || url === SERVICE_AZURE_MANIFEST_URL) {
       return Response.json({
         updatedAt: '2026-04-21T00:00:00.000Z',
         versions: [
@@ -67,6 +73,31 @@ function createFetchStub() {
   };
 }
 
+test('buildPlan defaults Desktop and Service discovery to direct Azure authority', async () => {
+  const requests = [];
+  const plan = await buildPlan({
+    eventName: 'workflow_dispatch',
+    eventPayload: { inputs: {} },
+    azureSasUrls: {
+      desktop: DESKTOP_AZURE_SAS_URL,
+      service: SERVICE_AZURE_SAS_URL
+    },
+    findPortableRelease: async () => null,
+    fetchImpl: createFetchStub({ requests }),
+    now: '2026-04-21T00:00:00.000Z'
+  });
+
+  assert.deepEqual(requests, [DESKTOP_AZURE_MANIFEST_URL, SERVICE_AZURE_MANIFEST_URL]);
+  assert.equal(plan.repositories.desktop, 'https://example.blob.core.windows.net/desktop/index.json?<sas-token-redacted>');
+  assert.equal(plan.repositories.service, 'https://example.blob.core.windows.net/server/index.json?<sas-token-redacted>');
+  assert.equal(plan.upstream.desktop.sourceAuthority, 'azure-blob');
+  assert.equal(plan.upstream.service.sourceAuthority, 'azure-blob');
+  assert.equal(plan.upstream.desktop.manifestPath, 'index.json');
+  assert.equal(plan.upstream.service.manifestPath, 'index.json');
+  assert.equal(plan.upstream.desktop.manifestUrl, 'https://example.blob.core.windows.net/desktop/index.json?<sas-token-redacted>');
+  assert.equal(plan.upstream.service.manifestUrl, 'https://example.blob.core.windows.net/server/index.json?<sas-token-redacted>');
+});
+
 test('buildPlan selects latest desktop and service releases for the default three-platform manual build', async () => {
   const plan = await buildPlan({
     eventName: 'workflow_dispatch',
@@ -77,8 +108,8 @@ test('buildPlan selects latest desktop and service releases for the default thre
       portable: 'HagiCode-org/steam_packer'
     },
     azureSasUrls: {
-      desktop: 'https://example.blob.core.windows.net/desktop?sp=racwl&sig=test-token',
-      service: 'https://example.blob.core.windows.net/server?sp=racwl&sig=test-token'
+      desktop: DESKTOP_AZURE_SAS_URL,
+      service: SERVICE_AZURE_SAS_URL
     },
     findPortableRelease: async () => null,
     fetchImpl: createFetchStub(),
@@ -98,6 +129,8 @@ test('buildPlan selects latest desktop and service releases for the default thre
   });
   assert.equal(plan.downloads.desktop.containerUrl, 'https://example.blob.core.windows.net/desktop/');
   assert.equal(plan.downloads.service.containerUrl, 'https://example.blob.core.windows.net/server/');
+  assert.equal(plan.upstream.desktop.sourceAuthority, 'explicit-override');
+  assert.equal(plan.upstream.service.sourceAuthority, 'explicit-override');
   assert.equal(plan.upstream.desktop.assetsByPlatform['linux-x64'].name, 'hagicode-desktop-0.3.0.zip');
   assert.equal(plan.upstream.desktop.assetsByPlatform['win-x64'].name, 'hagicode.desktop.0.3.0-unpacked.zip');
   assert.equal(plan.upstream.desktop.assetsByPlatform['osx-x64'].name, 'hagicode.desktop-0.3.0-mac.zip');
@@ -117,8 +150,8 @@ test('buildPlan selects latest releases and default platforms for scheduled auto
       portable: 'HagiCode-org/steam_packer'
     },
     azureSasUrls: {
-      desktop: 'https://example.blob.core.windows.net/desktop?sp=racwl&sig=test-token',
-      service: 'https://example.blob.core.windows.net/server?sp=racwl&sig=test-token'
+      desktop: DESKTOP_AZURE_SAS_URL,
+      service: SERVICE_AZURE_SAS_URL
     },
     findPortableRelease: async () => null,
     fetchImpl: createFetchStub(),
@@ -155,8 +188,8 @@ test('buildPlan respects dry_run and force_rebuild when the Azure release alread
       portable: 'HagiCode-org/steam_packer'
     },
     azureSasUrls: {
-      desktop: 'https://example.blob.core.windows.net/desktop?sp=racwl&sig=test-token',
-      service: 'https://example.blob.core.windows.net/server?sp=racwl&sig=test-token'
+      desktop: DESKTOP_AZURE_SAS_URL,
+      service: SERVICE_AZURE_SAS_URL
     },
     findPortableRelease: async () => ({
       tag_name: 'v0.1.0-beta.34',
@@ -195,8 +228,8 @@ test('buildPlan normalizes additional HAGICODE env config from workflow inputs',
       portable: 'HagiCode-org/steam_packer'
     },
     azureSasUrls: {
-      desktop: 'https://example.blob.core.windows.net/desktop?sp=racwl&sig=test-token',
-      service: 'https://example.blob.core.windows.net/server?sp=racwl&sig=test-token'
+      desktop: DESKTOP_AZURE_SAS_URL,
+      service: SERVICE_AZURE_SAS_URL
     },
     findPortableRelease: async () => null,
     fetchImpl: createFetchStub(),
@@ -225,8 +258,8 @@ test('resolveDispatchBuildPlan applies the same envConfig normalization for loca
       service: SERVICE_INDEX_URL,
       portable: 'HagiCode-org/steam_packer'
     },
-    desktopAzureSasUrl: 'https://example.blob.core.windows.net/desktop?sp=racwl&sig=test-token',
-    serviceAzureSasUrl: 'https://example.blob.core.windows.net/server?sp=racwl&sig=test-token',
+    desktopAzureSasUrl: DESKTOP_AZURE_SAS_URL,
+    serviceAzureSasUrl: SERVICE_AZURE_SAS_URL,
     envConfigInput: JSON.stringify({
       HAGICODE_LOG_LEVEL: 'info',
       HAGICODE_MODE: 'ignored'
@@ -244,6 +277,29 @@ test('resolveDispatchBuildPlan applies the same envConfig normalization for loca
   assert.deepEqual(writtenPlan.envConfig, result.plan.envConfig);
 });
 
+test('resolveDispatchBuildPlan persists redacted Azure manifest sources when no explicit index overrides are provided', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-build-plan-'));
+  const outputPath = path.join(tempRoot, 'build-plan.json');
+  const requests = [];
+
+  const result = await resolveDispatchBuildPlan({
+    eventName: 'workflow_dispatch',
+    eventPayload: { inputs: {} },
+    outputPath,
+    desktopAzureSasUrl: DESKTOP_AZURE_SAS_URL,
+    serviceAzureSasUrl: SERVICE_AZURE_SAS_URL,
+    fetchImpl: createFetchStub({ requests }),
+    findPortableRelease: async () => null
+  });
+
+  const writtenPlan = await readJson(outputPath);
+  assert.deepEqual(requests, [DESKTOP_AZURE_MANIFEST_URL, SERVICE_AZURE_MANIFEST_URL]);
+  assert.equal(result.plan.upstream.desktop.manifestUrl, 'https://example.blob.core.windows.net/desktop/index.json?<sas-token-redacted>');
+  assert.equal(result.plan.upstream.service.manifestUrl, 'https://example.blob.core.windows.net/server/index.json?<sas-token-redacted>');
+  assert.equal(writtenPlan.upstream.desktop.manifestUrl, result.plan.upstream.desktop.manifestUrl);
+  assert.equal(writtenPlan.upstream.service.manifestUrl, result.plan.upstream.service.manifestUrl);
+});
+
 test('buildPlan skips packaging when the latest Azure release already exists and force_rebuild is disabled', async () => {
   const plan = await buildPlan({
     eventName: 'workflow_dispatch',
@@ -256,8 +312,8 @@ test('buildPlan skips packaging when the latest Azure release already exists and
       portable: 'HagiCode-org/steam_packer'
     },
     azureSasUrls: {
-      desktop: 'https://example.blob.core.windows.net/desktop?sp=racwl&sig=test-token',
-      service: 'https://example.blob.core.windows.net/server?sp=racwl&sig=test-token'
+      desktop: DESKTOP_AZURE_SAS_URL,
+      service: SERVICE_AZURE_SAS_URL
     },
     findPortableRelease: async () => ({
       tag_name: 'v0.1.0-beta.34',
@@ -283,8 +339,8 @@ test('buildPlan skips scheduled packaging when the derived Azure release already
       portable: 'HagiCode-org/steam_packer'
     },
     azureSasUrls: {
-      desktop: 'https://example.blob.core.windows.net/desktop?sp=racwl&sig=test-token',
-      service: 'https://example.blob.core.windows.net/server?sp=racwl&sig=test-token'
+      desktop: DESKTOP_AZURE_SAS_URL,
+      service: SERVICE_AZURE_SAS_URL
     },
     findPortableRelease: async () => ({
       tag_name: 'v0.1.0-beta.34',

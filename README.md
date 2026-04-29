@@ -2,7 +2,7 @@
 
 `steam_packer` is an independent packaging and Azure publication repository.
 
-It accepts a normalized release plan from any non-interactive caller, assembles the packaging workspace, stages the payload, validates the Desktop-authored bundled toolchain, repacks deterministic platform archives, uploads them to Azure Blob Storage, and refreshes the root `hagicode-steam/index.json` entry without changing the downstream Steam hydration contract.
+It accepts a normalized release plan from any non-interactive caller, resolves Desktop and Service manifests from direct Azure authority by default, keeps Steam identity data on the index-site source of truth, assembles the packaging workspace, stages the payload, validates the Desktop-authored bundled toolchain, repacks deterministic platform archives, uploads them to Azure Blob Storage, refreshes the root `hagicode-steam/index.json` entry, and then creates or updates GitHub Release notes without changing the downstream Steam hydration contract.
 
 ## Repository Role
 
@@ -52,10 +52,10 @@ Reusable workflow:
 Scheduled trigger behavior:
 
 - `package-release` runs automatically every 4 hours with `cron: 0 */4 * * *`.
-- Scheduled runs auto-resolve the latest Desktop index release and the latest Service index release.
+- Scheduled runs auto-resolve the latest Desktop and Service manifests from the Azure authority containers by default.
 - Scheduled runs use the default publication targets: `linux-x64`, `win-x64`, and `osx-universal`.
 - The derived Portable Version release tag is checked before packaging. If that release already exists and no manual override is present, `build.shouldBuild=false` and the package/publish jobs are skipped.
-- The Actions summary records the trigger type, latest upstream versions, derived release tag, `should_build`, and the skip reason when packaging is skipped.
+- The Actions summary records the trigger type, the redacted Desktop / Service manifest sources, the latest upstream versions, the derived release tag, `should_build`, and the skip reason when packaging is skipped.
 
 Expected caller behavior:
 
@@ -67,7 +67,7 @@ Expected caller behavior:
 Manual trigger behavior:
 
 - `workflow_dispatch` is supported for maintainers.
-- Manual dispatch auto-resolves the latest Desktop index release and the latest Service index release.
+- Manual dispatch auto-resolves the latest Desktop and Service manifests from direct Azure authority unless a maintainer explicitly passes `--desktop-index-url` / `--service-index-url` style overrides.
 - Manual dispatch defaults to the three supported publication targets: `linux-x64`, `win-x64`, and `osx-universal`.
 - Manual dispatch exposes `force_rebuild`, `dry_run`, and an optional `env_config` JSON string; it does not require a build-plan parameter.
 - Set `force_rebuild=true` to package and publish even when the derived Portable Version release already exists.
@@ -108,6 +108,8 @@ node scripts/resolve-dispatch-build-plan.mjs \
   --env-config '{"HAGICODE_LOG_LEVEL":"info"}' \
   --output build/build-plan.json
 ```
+
+By default, that resolver reads `index.json` directly from the Desktop / Service Azure containers using the supplied SAS URLs. Optional explicit manifest URL overrides remain available for diagnostics or pinned runs, but the default discovery path no longer goes through cached `https://index.hagicode.com/desktop/index.json` or `https://index.hagicode.com/server/index.json`.
 
 The generated plan carries:
 
@@ -168,6 +170,10 @@ Publication now resolves both `steamAppId` and `steamDepotIds` from the shared S
 - `--steam-data-path` / `STEAM_PACKER_STEAM_DATA_PATH` remain compatibility overrides, and can point to either a local JSON file or an explicit `https://...` URL.
 
 `steam_packer` resolves the canonical `steamAppId` from `applications[].key` and maps `applications[].platformAppIds` to `steamDepotIds`. The resolved values are reused for dry-run output, publication result metadata, and every `versions[]` entry written back to `hagicode-steam/index.json`. Legacy entries that predate `steamAppId` are backfilled from the same resolved value, while any conflicting non-empty `steamAppId` still aborts the write.
+
+After Azure uploads succeed and the refreshed root index exposes the new version entry, `steam_packer` creates or updates the matching GitHub Release body for the published tag. The Release body summarizes the published upstream versions, Azure paths, and Steam identity metadata. Release assets remain Azure-only: `steam_packer` does not upload archives, checksums, or manifests to GitHub Releases.
+
+Local fixtures and explicit manifest overrides are diagnostics tools only. They do not redefine the default provenance rules: Desktop / Service manifests default to Azure authority, and Steam identity data defaults to the index site.
 
 ## Example Integration
 

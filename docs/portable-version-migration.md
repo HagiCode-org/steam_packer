@@ -2,7 +2,7 @@
 
 `steam_packer` stays independent. `portable-version` is just the current upstream caller for Portable Version packaging and Azure publication.
 
-`steam_packer` can also poll for server updates directly. Its `package-release` workflow runs on a repository schedule, resolves the latest Desktop and Service index entries, derives the Portable Version release tag from the Service version, and continues into the existing package/publish flow only when that release is missing. If the release already exists, the workflow records `should_build=false` and the skip reason, then stops before package and publish jobs.
+`steam_packer` can also poll for server updates directly. Its `package-release` workflow runs on a repository schedule, resolves the latest Desktop and Service manifests from direct Azure authority by default, derives the Portable Version release tag from the Service version, and continues into the existing package/publish flow only when that release is missing. If the release already exists, the workflow records `should_build=false` and the skip reason, then stops before package and publish jobs.
 
 ## What Moved
 
@@ -30,7 +30,7 @@ npm run verify:dry-run
 
 This validates packaging without Azure writes and confirms that the merged metadata remains complete enough for publication and later Steam hydration.
 
-For GitHub Actions, maintainers can run `package-release` with `workflow_dispatch` and `dry_run=true` to exercise the same latest-version resolution and packaging path without publishing to the Azure Steam container.
+For GitHub Actions, maintainers can run `package-release` with `workflow_dispatch` and `dry_run=true` to exercise the same Azure-authority version resolution and packaging path without publishing to the Azure Steam container.
 
 If the Steam package needs additional runtime flags, set `env_config` on `workflow_dispatch` to a JSON object such as `{"HAGICODE_LOG_LEVEL":"info"}`. The workflow and the local resolver use the same normalization contract, so the resulting plan always carries `HAGICODE_MODE=steam` and `HAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED=true` unless the package explicitly sets the achievement-sync value to `false`.
 
@@ -50,6 +50,8 @@ node scripts/resolve-dispatch-build-plan.mjs \
   --env-config '{"HAGICODE_LOG_LEVEL":"info"}' \
   --output build/build-plan.json
 ```
+
+Unless maintainers explicitly override the manifest source, both the workflow and the CLI resolver read `index.json` directly from the Desktop / Service Azure containers using the supplied SAS URLs. This bypasses the cached `index.hagicode.com` Desktop / Service routes. Explicit overrides remain valid for diagnostics, but they do not change the default source-of-truth behavior.
 
 ### Platform matrix
 
@@ -86,7 +88,9 @@ Workspace preparation persists the effective decision in `workspace-manifest.jso
 
 Workspace preparation now also writes `hagicode.env` beside the packaged executable, records `envFilePath` plus the normalized `envConfig` in `workspace-manifest.json`, and packaging fails if that file is missing from the final archive.
 
-The reusable `package-release` workflow now consumes the shared Steam dataset from `https://index.hagicode.com/steam/index.json` directly during publication. Local and standalone runs use the same online source by default, while `--steam-data-path` remains available when a maintainer needs to pin a local JSON fixture or a different explicit URL.
+The reusable `package-release` workflow now consumes the shared Steam dataset from `https://index.hagicode.com/steam/index.json` directly during publication. Local and standalone runs use the same online source by default, while `--steam-data-path` remains available when a maintainer needs to pin a local JSON fixture or a different explicit URL. Those fixtures and overrides are validation tools only; they do not promote any local copy to the default Steam identity source.
+
+After Azure uploads succeed and `hagicode-steam/index.json` exposes the refreshed release entry, `steam_packer` also creates or updates the matching GitHub Release notes for that tag. The GitHub Release remains metadata-only: package archives, checksums, and manifests stay in Azure Blob storage and are not uploaded as GitHub Release assets. Dry-run executions skip the GitHub Release sync.
 
 ### Primary Troubleshooting Entry Points
 

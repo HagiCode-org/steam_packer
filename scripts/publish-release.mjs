@@ -19,6 +19,7 @@ import {
   DEFAULT_STEAM_APP_KEY,
   resolveSteamPublicationIdentity
 } from './lib/steam-data.mjs';
+import { upsertReleaseNotes } from './lib/github.mjs';
 import { annotateError, appendSummary } from './lib/summary.mjs';
 
 const DEFAULT_PUBLICATION_UPLOAD_CONCURRENCY = 3;
@@ -58,6 +59,24 @@ function resolveSteamAzureSasUrl(value) {
     process.env.AZURE_SAS_URL;
 
   return sasUrl ? parseAzureSasUrl(sasUrl).toString() : null;
+}
+
+function resolveGitHubToken(value) {
+  const token = value ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+  return token ? requireNonEmptyString(token, 'githubToken') : null;
+}
+
+function stripQueryFromUrl(url) {
+  if (!url) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return String(url).replace(/\?.*$/, '');
+  }
 }
 
 function assertLegacyDepotOverridesMatchSharedData(sharedSteamDepotIds, overrides = {}) {
@@ -248,6 +267,87 @@ function buildResultVersionEntry({ plan, publicationArtifacts, steamAppId, steam
   });
 }
 
+function buildGitHubReleaseBody({
+  plan,
+  releaseTag,
+  steamAzureSasUrl,
+  rootIndex,
+  publicationArtifacts,
+  steamAppId,
+  steamDepotIds,
+  publishedAt
+}) {
+  const publicContainerUrl = stripQueryFromUrl(steamAzureSasUrl);
+  const publicRootIndexUrl = stripQueryFromUrl(rootIndex.indexUrl);
+
+  return [
+    `## Portable Version ${releaseTag}`,
+    '',
+    `- Published at: ${publishedAt}`,
+    `- Release tag: ${releaseTag}`,
+    `- Desktop version: ${plan.upstream.desktop.version}`,
+    `- Desktop manifest source: ${plan.upstream.desktop.manifestUrl}`,
+    `- Service version: ${plan.upstream.service.version}`,
+    `- Service manifest source: ${plan.upstream.service.manifestUrl}`,
+    `- Azure container: ${publicContainerUrl ?? '[unknown]'}`,
+    `- Azure version directory: ${releaseTag}/`,
+    `- Azure root index: ${publicRootIndexUrl ?? '[unknown]'}`,
+    `- Build manifest path: ${publicationArtifacts.metadataBlobPaths.buildManifestPath}`,
+    `- Artifact inventory path: ${publicationArtifacts.metadataBlobPaths.artifactInventoryPath}`,
+    `- Checksums path: ${publicationArtifacts.metadataBlobPaths.checksumsPath}`,
+    `- Steam app id: ${steamAppId}`,
+    `- Steam depot ids: linux=${steamDepotIds.linux}, windows=${steamDepotIds.windows}, macos=${steamDepotIds.macos}`,
+    '',
+    '## Publication Summary',
+    '',
+    `- Azure assets uploaded: ${publicationArtifacts.uploads.length}`,
+    '- GitHub Release assets uploaded: 0',
+    '- Distribution surfaces: Azure Blob version directory plus hagicode-steam/index.json'
+  ].join('\n');
+}
+
+async function syncGitHubRelease({
+  plan,
+  releaseTag,
+  steamAzureSasUrl,
+  rootIndex,
+  publicationArtifacts,
+  steamAppId,
+  steamDepotIds,
+  publishedAt,
+  githubToken,
+  fetchImpl
+}) {
+  const repository = requireNonEmptyString(plan?.release?.repository, 'plan.release.repository');
+  const releaseName = requireNonEmptyString(
+    plan?.release?.name ?? `Portable Version ${releaseTag}`,
+    'plan.release.name'
+  );
+  const { action, release } = await upsertReleaseNotes(repository, releaseTag, githubToken, {
+    name: releaseName,
+    body: buildGitHubReleaseBody({
+      plan,
+      releaseTag,
+      steamAzureSasUrl,
+      rootIndex,
+      publicationArtifacts,
+      steamAppId,
+      steamDepotIds,
+      publishedAt
+    }),
+    fetchImpl
+  });
+
+  return {
+    action,
+    repository,
+    tag: releaseTag,
+    name: release?.name ?? releaseName,
+    url: release?.html_url ?? null,
+    assetCount: Array.isArray(release?.assets) ? release.assets.length : 0
+  };
+}
+
 async function runBoundedParallel(items, worker, { concurrency = DEFAULT_PUBLICATION_UPLOAD_CONCURRENCY } = {}) {
   if (!Array.isArray(items)) {
     throw new Error('Bounded parallel execution requires an array of items.');
@@ -339,6 +439,7 @@ export async function publishRelease({
   outputDir,
   forceDryRun = false,
   steamAzureSasUrl = resolveSteamAzureSasUrl(),
+  githubToken: githubTokenInput,
   steamAppKey: steamAppKeyInput,
   steamDataPath: steamDataPathInput,
   linuxDepotId,
@@ -355,6 +456,7 @@ export async function publishRelease({
   const resolvedOutputDir = path.resolve(outputDir ?? path.join(resolvedArtifactsDir, 'release-metadata'));
   const dryRun = forceDryRun || Boolean(plan.build.dryRun);
   const releaseTag = requireNonEmptyString(plan?.release?.tag, 'plan.release.tag');
+  const githubToken = resolveGitHubToken(githubTokenInput);
 
   await ensureDir(resolvedOutputDir);
 
@@ -396,6 +498,7 @@ export async function publishRelease({
       `- Azure version directory: ${releaseTag}/`,
       `- Planned uploads: ${publicationArtifacts.uploads.length}`,
       `- Root index update: ${steamAzureSasUrl ? 'planned' : 'blocked (missing Azure SAS URL)'}`,
+      '- GitHub Release notes: skipped (dry-run)',
       `- Build manifest metadata: ${publicationArtifacts.metadataBlobPaths.buildManifestPath}`,
       `- Artifact inventory metadata: ${publicationArtifacts.metadataBlobPaths.artifactInventoryPath}`,
       `- Checksums metadata: ${publicationArtifacts.metadataBlobPaths.checksumsPath}`,
@@ -408,7 +511,8 @@ export async function publishRelease({
       assetCount: publicationArtifacts.uploads.length,
       metadata: publicationArtifacts.metadataBlobPaths,
       steamAppId,
-      steamDepotIds
+      steamDepotIds,
+      githubRelease: null
     };
   }
 
@@ -477,6 +581,28 @@ export async function publishRelease({
   }
   console.log(`[publish-release] Root index verification succeeded for ${releaseTag}`);
 
+  const githubRelease = githubToken
+    ? await syncGitHubRelease({
+        plan,
+        releaseTag,
+        steamAzureSasUrl,
+        rootIndex,
+        publicationArtifacts,
+        steamAppId,
+        steamDepotIds,
+        publishedAt,
+        githubToken,
+        fetchImpl
+      })
+    : null;
+  if (githubRelease) {
+    console.log(
+      `[publish-release] GitHub Release notes ${githubRelease.action} for ${githubRelease.repository}@${githubRelease.tag}`
+    );
+  } else {
+    console.log('[publish-release] GitHub Release notes skipped because no token was provided');
+  }
+
   const resultPath = path.join(resolvedOutputDir, `${releaseTag}.publish-result.json`);
   await writeJson(resultPath, {
     releaseTag,
@@ -489,6 +615,7 @@ export async function publishRelease({
     metadata: publicationArtifacts.metadataBlobPaths,
     steamAppId,
     steamDepotIds,
+    githubRelease,
     uploads: uploadedBlobs.map((entry) => ({
       blobPath: entry.blobPath,
       sanitizedUploadUrl: entry.sanitizedUploadUrl
@@ -502,6 +629,9 @@ export async function publishRelease({
     `- Azure version directory: ${releaseTag}/`,
     `- Assets uploaded: ${publicationArtifacts.uploads.length}`,
     `- Root index: ${rootIndex.sanitizedIndexUrl}`,
+    `- GitHub Release notes: ${
+      githubRelease ? `${githubRelease.action} (${githubRelease.url ?? `${githubRelease.repository}@${githubRelease.tag}`})` : 'skipped'
+    }`,
     `- Build manifest metadata: ${publicationArtifacts.metadataBlobPaths.buildManifestPath}`,
     `- Artifact inventory metadata: ${publicationArtifacts.metadataBlobPaths.artifactInventoryPath}`,
     `- Checksums metadata: ${publicationArtifacts.metadataBlobPaths.checksumsPath}`,
@@ -514,6 +644,7 @@ export async function publishRelease({
     metadata: publicationArtifacts.metadataBlobPaths,
     steamAppId,
     steamDepotIds,
+    githubRelease,
     resultPath
   };
 }
@@ -526,6 +657,7 @@ async function main() {
       'output-dir': { type: 'string' },
       'force-dry-run': { type: 'boolean', default: false },
       'steam-azure-sas-url': { type: 'string' },
+      'github-token': { type: 'string' },
       'steam-app-key': { type: 'string' },
       'steam-data-path': { type: 'string' },
       // Deprecated compatibility options. Publication now resolves depot ids from the shared Steam dataset.
@@ -542,6 +674,7 @@ async function main() {
     outputDir: values['output-dir'],
     forceDryRun: values['force-dry-run'],
     steamAzureSasUrl: values['steam-azure-sas-url'],
+    githubToken: values['github-token'],
     steamAppKey: values['steam-app-key'],
     steamDataPath: values['steam-data-path'],
     linuxDepotId: values['linux-depot-id'],

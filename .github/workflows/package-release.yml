@@ -41,7 +41,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 env:
@@ -210,6 +210,7 @@ jobs:
       - name: Publish release or emit dry-run report
         shell: bash
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           STEAM_PACKER_STEAM_AZURE_SAS_URL: ${{ env.STEAM_AZURE_SAS_URL }}
         run: |
           node scripts/publish-release.mjs \

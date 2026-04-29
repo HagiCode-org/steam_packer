@@ -34,9 +34,18 @@ function normalizeRelease(release) {
   };
 }
 
-async function requestJson(endpoint, token, { allowNotFound = false } = {}) {
-  const response = await fetch(`${API_ROOT}${endpoint}`, {
-    headers: getHeaders(token)
+async function requestJson(
+  endpoint,
+  token,
+  { allowNotFound = false, method = 'GET', body, fetchImpl = fetch } = {}
+) {
+  const response = await fetchImpl(`${API_ROOT}${endpoint}`, {
+    method,
+    headers: {
+      ...getHeaders(token),
+      ...(body ? { 'Content-Type': 'application/json' } : {})
+    },
+    ...(body ? { body: JSON.stringify(body) } : {})
   });
 
   if (allowNotFound && response.status === 404) {
@@ -48,27 +57,39 @@ async function requestJson(endpoint, token, { allowNotFound = false } = {}) {
     throw new Error(`GitHub API request failed (${response.status}) for ${endpoint}: ${body}`);
   }
 
+  if (response.status === 204) {
+    return null;
+  }
+
   return response.json();
 }
 
-export async function listReleases(repository, token, perPage = 20) {
-  const releases = await requestJson(`/repos/${repository}/releases?per_page=${perPage}`, token);
+export async function listReleases(repository, token, perPage = 20, { fetchImpl = fetch } = {}) {
+  const releases = await requestJson(`/repos/${repository}/releases?per_page=${perPage}`, token, {
+    fetchImpl
+  });
   return Array.isArray(releases) ? releases.map(normalizeRelease) : [];
 }
 
-export async function getReleaseByTag(repository, tag, token, { allowNotFound = false } = {}) {
+export async function getReleaseByTag(
+  repository,
+  tag,
+  token,
+  { allowNotFound = false, fetchImpl = fetch } = {}
+) {
   const release = await requestJson(`/repos/${repository}/releases/tags/${encodeURIComponent(tag)}`, token, {
-    allowNotFound
+    allowNotFound,
+    fetchImpl
   });
   return normalizeRelease(release);
 }
 
-export async function findReleaseByTag(repository, tag, token) {
-  return getReleaseByTag(repository, tag, token, { allowNotFound: true });
+export async function findReleaseByTag(repository, tag, token, { fetchImpl = fetch } = {}) {
+  return getReleaseByTag(repository, tag, token, { allowNotFound: true, fetchImpl });
 }
 
-export async function getLatestEligibleRelease(repository, token) {
-  const releases = await listReleases(repository, token, 30);
+export async function getLatestEligibleRelease(repository, token, { fetchImpl = fetch } = {}) {
+  const releases = await listReleases(repository, token, 30, { fetchImpl });
   const eligibleReleases = releases.filter((release) => !release.draft);
   if (eligibleReleases.length === 0) {
     throw new Error(`No eligible releases found for ${repository}.`);
@@ -119,4 +140,64 @@ export async function downloadReleaseAsset(asset, destinationPath, token) {
 
   await pipeline(response.body, createWriteStream(destinationPath));
   return destinationPath;
+}
+
+export async function createRelease(repository, token, payload, { fetchImpl = fetch } = {}) {
+  const release = await requestJson(`/repos/${repository}/releases`, token, {
+    method: 'POST',
+    body: payload,
+    fetchImpl
+  });
+  return normalizeRelease(release);
+}
+
+export async function updateRelease(repository, releaseId, token, payload, { fetchImpl = fetch } = {}) {
+  const release = await requestJson(`/repos/${repository}/releases/${releaseId}`, token, {
+    method: 'PATCH',
+    body: payload,
+    fetchImpl
+  });
+  return normalizeRelease(release);
+}
+
+export async function upsertReleaseNotes(
+  repository,
+  tag,
+  token,
+  { name, body, fetchImpl = fetch } = {}
+) {
+  const existingRelease = await findReleaseByTag(repository, tag, token, { fetchImpl });
+  if (!existingRelease) {
+    return {
+      action: 'created',
+      release: await createRelease(
+        repository,
+        token,
+        {
+          tag_name: tag,
+          name: name ?? tag,
+          body,
+          draft: false,
+          prerelease: false
+        },
+        { fetchImpl }
+      )
+    };
+  }
+
+  return {
+    action: 'updated',
+    release: await updateRelease(
+      repository,
+      existingRelease.id,
+      token,
+      {
+        name: name ?? existingRelease.name ?? tag,
+        body,
+        draft: existingRelease.draft ?? false,
+        prerelease: existingRelease.prerelease ?? false
+      },
+      { fetchImpl }
+    )
+  };
 }

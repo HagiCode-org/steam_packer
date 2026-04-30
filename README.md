@@ -131,7 +131,7 @@ HAGICODE_STEAM_ACHIEVEMENT_SYNC_ENABLED=true
 HAGICODE_LOG_LEVEL=info
 ```
 
-`steam_packer` does not download Node, install OpenSpec, or assemble the portable toolchain. The Desktop asset is the owner of `extra/toolchain`; this repository only verifies the Desktop-authored `toolchain-manifest.json` contract and packages the validated input.
+`steam_packer` does not download Node, install OpenSpec, or assemble the portable toolchain. The Desktop asset is the owner of `extra/portable-fixed/toolchain`; this repository only verifies the Desktop-authored `toolchain-manifest.json` contract and packages the validated input.
 
 Result stages are attributed as:
 

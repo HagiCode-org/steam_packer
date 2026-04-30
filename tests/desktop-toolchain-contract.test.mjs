@@ -126,7 +126,7 @@ test('desktop toolchain contract accepts bundled Desktop toolchain without manif
   assert.equal(validation.contractMode, 'bundled-content-fallback');
   assert.equal(validation.activationPolicy.enabled, true);
   assert.equal(validation.activationPolicy.source, 'bundled-content-fallback');
-  assert.equal(validation.selectedRootSource, 'canonical-toolchain');
+  assert.equal(validation.selectedRootSource, 'legacy-extra-toolchain');
 });
 
 test('workspace preparation persists legacy fallback activation policy', async () => {
@@ -257,7 +257,7 @@ test('workspace preparation uses extra root when desktop asset only contains can
   ]);
 
   const workspaceManifest = await readJson(path.join(workspacePath, 'workspace-manifest.json'));
-  assert.match(workspaceManifest.portableFixedRoot, /resources[\/]extra$/);
+  assert.match(workspaceManifest.portableFixedRoot, /resources[\/]extra[\/]portable-fixed$/);
   assert.equal(workspaceManifest.toolchainRootSource, 'canonical-toolchain');
   assert.equal(workspaceManifest.bundledToolchainEnabled, true);
 });

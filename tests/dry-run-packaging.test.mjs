@@ -150,7 +150,7 @@ test('dry-run packaging stages payload and emits inventory metadata', async () =
   assert.equal(inventory.toolchainActivationPolicy.source, 'manifest-default');
   assert.equal(payloadReport.serviceVersion, '0.1.0-beta.33');
   assert.match(payloadReport.validatedPayloadRoot, /service-payload|extracted/);
-  assert.match(payloadReport.embeddedTargetRoot, /resources[\\/]extra[\\/]current/);
+  assert.match(payloadReport.embeddedTargetRoot, /resources[\\/]extra[\\/]portable-fixed[\\/]current/);
   assert.match(payloadReport.downloadSource, /<sas-token-redacted>|hagicode-0\.1\.0-beta\.33-linux-x64-nort\.zip/);
   assert.match(inventory.toolchainValidationPath, /toolchain-validation-linux-x64\.json$/);
   assert.deepEqual(workspaceManifest.envConfig, {
@@ -168,10 +168,13 @@ test('dry-run packaging stages payload and emits inventory metadata', async () =
   const packagedArchivePath = inventory.artifacts[0].outputPath;
   const archiveListing = (await validateZipPaths(packagedArchivePath)).join('\n');
   assert.match(archiveListing, /^hagicode\.env$/m);
-  assert.match(archiveListing, /resources\/extra\/toolchain\/toolchain-manifest\.json/);
-  assert.match(archiveListing, /resources\/extra\/toolchain\/node\/bin\/node/);
-  assert.match(archiveListing, /resources\/extra\/toolchain\/node\/bin\/npm/);
-  assert.doesNotMatch(archiveListing, /resources\/extra\/toolchain\/bin\/openspec/);
+  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/toolchain-manifest\.json/);
+  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/node\/bin\/node/);
+  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/node\/bin\/npm/);
+  assert.match(archiveListing, /resources\/extra\/portable-fixed\/current\/manifest\.json/);
+  assert.doesNotMatch(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/bin\/openspec/);
+  assert.doesNotMatch(archiveListing, /resources\/extra\/current\/(manifest\.json|config\/|lib\/)/);
+  assert.doesNotMatch(archiveListing, /resources\/extra\/toolchain\/(toolchain-manifest\.json|node\/|bin\/)/);
 
   const extractedArchiveRoot = await mkdtemp(path.join(os.tmpdir(), 'steam-packer-dry-run-extract-'));
   await extractArchive(packagedArchivePath, extractedArchiveRoot);
@@ -295,8 +298,10 @@ test('dry-run packaging accepts Desktop-bundled toolchain without manifest', asy
 
   const packagedArchivePath = inventory.artifacts[0].outputPath;
   const archiveListing = (await validateZipPaths(packagedArchivePath)).join('\n');
-  assert.doesNotMatch(archiveListing, /resources\/extra\/toolchain\/toolchain-manifest\.json/);
-  assert.match(archiveListing, /resources\/extra\/toolchain\/node\/bin\/node/);
-  assert.match(archiveListing, /resources\/extra\/toolchain\/node\/bin\/npm/);
-  assert.doesNotMatch(archiveListing, /resources\/extra\/toolchain\/bin\/openspec/);
+  assert.doesNotMatch(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/toolchain-manifest\.json/);
+  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/node\/bin\/node/);
+  assert.match(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/node\/bin\/npm/);
+  assert.doesNotMatch(archiveListing, /resources\/extra\/portable-fixed\/toolchain\/bin\/openspec/);
+  assert.doesNotMatch(archiveListing, /resources\/extra\/current\/(manifest\.json|config\/|lib\/)/);
+  assert.doesNotMatch(archiveListing, /resources\/extra\/toolchain\/(toolchain-manifest\.json|node\/|bin\/)/);
 });

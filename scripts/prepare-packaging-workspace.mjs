@@ -12,6 +12,7 @@ import { extractArchive } from './lib/archive.mjs';
 import { normalizeSteamEnvConfig, serializeEnvConfig } from './lib/env-config.mjs';
 import {
   cleanDir,
+  copyDir,
   ensureDir,
   findFirstMatchingDirectory,
   pathExists,
@@ -21,7 +22,7 @@ import {
 import { fetchIndexManifest, getAssetEntries, resolveVersionEntry } from './lib/index-source.mjs';
 import { annotateError, appendSummary } from './lib/summary.mjs';
 import { getPlatformConfig, getRequestedAssetPlatforms } from './lib/platforms.mjs';
-import { resolveToolchainRoot, resolveToolchainRoots } from './lib/toolchain.mjs';
+import { resolveLegacyToolchainRoot, resolveToolchainRoot, resolveToolchainRoots } from './lib/toolchain.mjs';
 import { validateDesktopToolchainContract } from './lib/desktop-toolchain-contract.mjs';
 
 async function directoryContainsPortableRoot(rootPath, portableFixedSegments) {
@@ -29,7 +30,15 @@ async function directoryContainsPortableRoot(rootPath, portableFixedSegments) {
 }
 
 async function directoryContainsDesktopToolchain(rootPath, platform) {
-  return pathExists(path.join(resolveToolchainRoot(rootPath, platform.id), 'toolchain-manifest.json'));
+  const canonicalToolchainRoot = resolveToolchainRoot(rootPath, platform.id);
+  const legacyToolchainRoot = resolveLegacyToolchainRoot(rootPath, platform.id);
+  const nodeExecutableName = platform.toolchain.nodeExecutableName;
+  const nodeBinSegments = platform.toolchain.nodeBinSegments;
+
+  return (await pathExists(path.join(canonicalToolchainRoot, 'toolchain-manifest.json')))
+    || (await pathExists(path.join(legacyToolchainRoot, 'toolchain-manifest.json')))
+    || (await pathExists(path.join(canonicalToolchainRoot, 'node', ...nodeBinSegments, nodeExecutableName)))
+    || (await pathExists(path.join(legacyToolchainRoot, 'node', ...nodeBinSegments, nodeExecutableName)));
 }
 
 async function directoryLooksLikeDesktopAppRoot(rootPath, platform) {
@@ -75,25 +84,31 @@ async function validatePreparedDesktopWorkspace({ desktopWorkspace, platform }) 
   const desktopAppRoot = await resolveDesktopAppRoot(desktopWorkspace, platform);
   const portableFixedRoot = path.join(desktopAppRoot, ...platform.portableFixedSegments);
   await ensureDir(portableFixedRoot);
+  const canonicalToolchainRoots = resolveToolchainRoots(desktopAppRoot, platform.id);
 
   const toolchainValidation = await validateDesktopToolchainContract({
     platformContentRoot: desktopAppRoot,
     platformId: platform.id
   });
-  const toolchainRoots = resolveToolchainRoots(
-    desktopAppRoot,
-    platform.id,
-    toolchainValidation.toolchainRoot,
-  );
 
   if (!toolchainValidation.valid) {
     throw new Error(toolchainValidation.errors.join('; '));
   }
 
+  const canonicalToolchainRoot = canonicalToolchainRoots.toolchainRoot;
+  if (toolchainValidation.selectedRootSource === 'legacy-extra-toolchain'
+    && toolchainValidation.toolchainRoot !== canonicalToolchainRoot) {
+    await cleanDir(canonicalToolchainRoot);
+    await copyDir(toolchainValidation.toolchainRoot, canonicalToolchainRoot);
+    await cleanDir(toolchainValidation.toolchainRoot);
+    toolchainValidation.toolchainRoot = canonicalToolchainRoot;
+    toolchainValidation.canonicalToolchainRoot = canonicalToolchainRoot;
+  }
+
   return {
     desktopAppRoot,
     portableFixedRoot,
-    toolchainRoots,
+    toolchainRoots: canonicalToolchainRoots,
     toolchainValidation
   };
 }
@@ -332,7 +347,9 @@ async function main() {
     toolchainRoot: toolchainRoots.toolchainRoot,
     toolchainBinRoot: toolchainRoots.toolchainBinRoot,
     toolchainManifestPath: toolchainRoots.toolchainManifestPath,
-    toolchainRootSource: toolchainValidation.selectedRootSource ?? 'canonical-toolchain',
+    toolchainRootSource: toolchainValidation.selectedRootSource === 'legacy-extra-toolchain'
+      ? 'canonical-toolchain'
+      : (toolchainValidation.selectedRootSource ?? 'canonical-toolchain'),
     toolchainActivationPolicy: toolchainValidation.activationPolicy,
     bundledToolchainEnabled: toolchainValidation.activationPolicy?.enabled ?? false,
     dryRun: plan.build.dryRun

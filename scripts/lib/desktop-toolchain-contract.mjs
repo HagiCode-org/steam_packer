@@ -4,6 +4,7 @@ import { getPlatformConfig } from './platforms.mjs';
 import {
   getNodeExecutableRelativePath,
   getNpmExecutableRelativePath,
+  resolveLegacyToolchainRoot,
   resolveToolchainRoot,
 } from './toolchain.mjs';
 
@@ -91,6 +92,16 @@ async function resolveDesktopToolchainContractRoot(platformContentRoot, platform
       canonicalToolchainRoot,
       selectedRootSource: 'canonical-toolchain',
       legacyLayout: false,
+    };
+  }
+
+  const legacyToolchainRoot = resolveLegacyToolchainRoot(platformContentRoot, platformId);
+  if (await pathExists(legacyToolchainRoot)) {
+    return {
+      toolchainRoot: legacyToolchainRoot,
+      canonicalToolchainRoot,
+      selectedRootSource: 'legacy-extra-toolchain',
+      legacyLayout: true,
     };
   }
 

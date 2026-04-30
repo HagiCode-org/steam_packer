@@ -137,8 +137,8 @@ function createUniversalBundleManifest(bundleConfig, stagedCurrentPath, members)
     schemaVersion: 1,
     kind: bundleConfig.kind,
     publicationPlatform: bundleConfig.publicationPlatform,
-    currentLayout: 'extra/current/{osx-x64,osx-arm64}',
-    fallbackRule: 'When this manifest is absent, Desktop must treat extra/current as the single-root payload.',
+    currentLayout: 'portable-fixed/current/{osx-x64,osx-arm64}',
+    fallbackRule: 'When this manifest is absent, Desktop must use portable-fixed/current as the legacy single-root payload.',
     manifestPath: path.join(stagedCurrentPath, bundleConfig.manifestFileName).replaceAll(path.sep, '/'),
     includedPlatforms: memberPlatforms,
     members: members.map((member) => ({

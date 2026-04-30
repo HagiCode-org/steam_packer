@@ -33,6 +33,11 @@ export function resolveToolchainRoot(platformContentRoot, platformId) {
   return path.join(platformContentRoot, ...platform.portableFixedSegments, 'toolchain');
 }
 
+export function resolveLegacyToolchainRoot(platformContentRoot, platformId) {
+  const platform = getPlatformConfig(platformId);
+  return path.join(platformContentRoot, ...platform.portableFixedSegments.slice(0, -1), 'toolchain');
+}
+
 export function resolveToolchainRoots(basePath, platformId, resolvedToolchainRoot) {
   const toolchainRoot = platformId
     ? resolvedToolchainRoot ?? resolveToolchainRoot(basePath, platformId)
